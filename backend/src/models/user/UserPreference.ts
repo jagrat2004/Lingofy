@@ -2,6 +2,7 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IUserPreferences extends Document {
   userId: mongoose.Types.ObjectId;
+  languagesToLearn: string[];
   favoriteGenres: string[];
   favoriteArtists: string[];
   vocabularyLevel: "beginner" | "intermediate" | "advanced";
@@ -19,6 +20,11 @@ const UserPreferencesSchema: Schema<IUserPreferences> = new Schema(
       ref: "User",
       required: true,
       unique: true
+    },
+
+    languagesToLearn: {
+      type: [String],
+      default: []
     },
 
     favoriteGenres: {
