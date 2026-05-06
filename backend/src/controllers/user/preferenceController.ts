@@ -25,6 +25,8 @@ export const savePreferences = async (req: AuthRequest, res: Response): Promise<
       { new: true, upsert: true }
     );
 
+    console.log(`Preferences saved for user: ${userId}`);
+
     res.status(200).json({
       message: "Preferences saved successfully",
       data: preferences
