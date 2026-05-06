@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import authRoutes from "./routes/authRoutes";
 import preferenceRoutes from "./routes/preferenceRoutes";
+import songRoutes from "./routes/songRoutes";
 
 
 const app = express();
@@ -29,6 +30,7 @@ Routes
 
 app.use("/api/auth", authRoutes);
 app.use("/api/preferences", preferenceRoutes);
+app.use("/api/songs", songRoutes);
 
 
 /*

@@ -17,7 +17,17 @@ const LoginPage = () => {
       const data = await res.json();
       if (res.ok) {
         localStorage.setItem('token', data.token);
-        navigate('/preferences');
+        localStorage.setItem('role', data.role);
+        if (data.role === 'admin') {
+          navigate('/admin');
+        } else {
+          // If user already has preferences, go straight to dashboard
+          if (data.hasPreferences) {
+            navigate('/dashboard');
+          } else {
+            navigate('/preferences');
+          }
+        }
       } else {
         alert(data.message);
       }

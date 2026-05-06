@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import User from "../models/user/User";
+import UserPreferences from "../models/user/UserPreference";
 
 const generateToken = (id: string, email: string) => {
   return jwt.sign({ id, email }, process.env.JWT_SECRET || "fallback_secret", {
@@ -12,9 +13,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, email, password } = req.body;
     
-    // Default name if not provided but email exists (since design doesn't ask for name but model expects it)
     const userName = name || email.split("@")[0];
-
     const userExists = await User.findOne({ email });
 
     if (userExists) {
@@ -35,6 +34,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         _id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
+        hasPreferences: false,
         token,
       });
     } else {
@@ -49,22 +50,26 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    // Email or Username Support
-    // The design says "Email or Username", we'll check name and email
     let user;
     if (email.includes("@")) {
       user = await User.findOne({ email });
     } else {
       user = await User.findOne({ name: email });
-      if (!user) user = await User.findOne({ email }); // Fallback
+      if (!user) user = await User.findOne({ email });
     }
 
     if (user && (await user.comparePassword(password))) {
       const token = generateToken(user._id.toString(), user.email);
+      
+      // Check if preferences exist
+      const preferences = await UserPreferences.findOne({ userId: user._id });
+
       res.json({
         _id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
+        hasPreferences: !!preferences,
         token,
       });
     } else {
