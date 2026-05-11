@@ -15,14 +15,15 @@ export const addSong = async (req: Request, res: Response): Promise<void> => {
       durationSeconds: 0, // Default for now
     });
 
-    // Save segments
+    // Save segments with a default 15s intro buffer
+    const introBuffer = 15;
     if (lyrics && Array.isArray(lyrics)) {
       const segments = lyrics.map((text, index) => ({
         songId: song._id,
         segmentOrder: index + 1,
         text,
-        startTime: 0,
-        endTime: 0
+        startTime: introBuffer + (index * 3.5), // Estimate 3.5s per line + intro
+        endTime: introBuffer + ((index + 1) * 3.5)
       }));
       await LyricSegment.insertMany(segments);
     }

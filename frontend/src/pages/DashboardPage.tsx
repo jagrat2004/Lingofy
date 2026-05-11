@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -35,10 +35,21 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [currentLang, setCurrentLang] = useState('en');
   const [segments, setSegments] = useState<any[]>([]);
-  const progressInterval = useRef<any>(null);
+  const [ytReady, setYtReady] = useState(false);
+  const [syncOffset, setSyncOffset] = useState(0); // Manual sync adjustment
   const navigate = useNavigate();
 
-  const currentSong = songs[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
+  const currentSong = songs[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, audioUrl: '', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
+
+  // Get YouTube ID from URL
+  const getYouTubeId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url?.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const videoId = useMemo(() => getYouTubeId(currentSong.audioUrl), [currentSong.audioUrl]);
+  const playerRef = useRef<any>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -70,9 +81,7 @@ const DashboardPage = () => {
 
   useEffect(() => {
     if (currentSong?._id) {
-      // In a real app, we'd fetch segments for the current song
-      // For now, let's assume they are stored/fetched. 
-      // I'll add a fetch for segments too.
+      setSyncOffset(0); // Reset sync for new song
       const fetchSegments = async () => {
         try {
           const token = localStorage.getItem('token');
@@ -89,34 +98,105 @@ const DashboardPage = () => {
     }
   }, [currentSong]);
 
-  // Player Logic
-  useEffect(() => {
-    if (isPlaying) {
-      progressInterval.current = setInterval(() => {
-        setCurrentTime(prev => {
-          if (prev >= (currentSong.durationSeconds || 180)) {
-            handleNext();
-            return 0;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } else {
-      clearInterval(progressInterval.current);
-    }
-    return () => clearInterval(progressInterval.current);
-  }, [isPlaying, currentSong]);
+  // Adjusted timing calculation
+  const activeIndex = segments.findIndex(
+    seg => (currentTime + syncOffset) >= seg.startTime && (currentTime + syncOffset) < seg.endTime
+  );
 
-  const handlePlayPause = () => setIsPlaying(!isPlaying);
+  useEffect(() => {
+    if (activeIndex !== -1) {
+      const el = document.getElementById(`line-${activeIndex}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeIndex]);
+
+
+
+  // Load YouTube API
+  useEffect(() => {
+    if (!(window as any).YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    } else {
+      setYtReady(true);
+    }
+
+    (window as any).onYouTubeIframeAPIReady = () => {
+      console.log("YT API Ready");
+      setYtReady(true);
+    };
+  }, []);
+
+  // Initialize/Update Player
+  useEffect(() => {
+    if (videoId && ytReady && (window as any).YT && (window as any).YT.Player) {
+      if (playerRef.current && playerRef.current.loadVideoById) {
+        playerRef.current.loadVideoById(videoId);
+      } else {
+        playerRef.current = new (window as any).YT.Player('youtube-player', {
+          height: '100%',
+          width: '100%',
+          videoId: videoId,
+          playerVars: { 'autoplay': 1, 'controls': 0, 'mute': 0, 'enablejsapi': 1 },
+          events: {
+            'onStateChange': (event: any) => {
+              if (event.data === (window as any).YT.PlayerState.PLAYING) {
+                setIsPlaying(true);
+              } else if (event.data === (window as any).YT.PlayerState.PAUSED) {
+                setIsPlaying(false);
+              }
+            },
+            'onReady': () => {
+              console.log("Player Ready");
+            }
+          }
+        });
+      }
+    }
+  }, [videoId, ytReady]);
+
+  // Sync currentTime with actual YouTube player
+  useEffect(() => {
+    let interval: any;
+    if (isPlaying && playerRef.current && playerRef.current.getCurrentTime) {
+      interval = setInterval(() => {
+        try {
+          const time = playerRef.current.getCurrentTime();
+          setCurrentTime(time);
+        } catch (e) { console.error("Sync error", e); }
+      }, 300); // 300ms for ultra-smooth sync
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  const handlePlayPause = () => {
+    if (!playerRef.current || typeof playerRef.current.playVideo !== 'function') {
+      console.log("Player not ready yet...");
+      return;
+    }
+    
+    const state = playerRef.current.getPlayerState();
+    if (state === (window as any).YT.PlayerState.PLAYING) {
+      playerRef.current.pauseVideo();
+      setIsPlaying(false);
+    } else {
+      playerRef.current.playVideo();
+      setIsPlaying(true);
+    }
+  };
   
   const handleNext = () => {
     setCurrentSongIndex((prev) => (prev + 1) % (songs.length || 1));
     setCurrentTime(0);
+    if (playerRef.current?.stopVideo) playerRef.current.stopVideo();
   };
 
   const handlePrev = () => {
     setCurrentSongIndex((prev) => (prev - 1 + (songs.length || 1)) % (songs.length || 1));
     setCurrentTime(0);
+    if (playerRef.current?.stopVideo) playerRef.current.stopVideo();
   };
 
   const formatTime = (seconds: number) => {
@@ -124,6 +204,8 @@ const DashboardPage = () => {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
+
+
 
   if (loading) {
     return (
@@ -141,6 +223,23 @@ const DashboardPage = () => {
       fontFamily: 'Inter, sans-serif',
       display: 'flex'
     }}>
+      {/* Mini YouTube Player Container */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: '20px', 
+        right: '20px', 
+        width: '180px', 
+        height: '100px', 
+        borderRadius: '12px',
+        overflow: 'hidden', 
+        zIndex: 1000,
+        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        background: '#000',
+        display: isPlaying ? 'block' : 'none'
+      }}>
+        <div id="youtube-player"></div>
+      </div>
       {/* Sidebar */}
       <aside className="desktop-sidebar" style={{ 
         width: '280px', background: '#000', borderRight: '1px solid rgba(255,255,255,0.05)',
@@ -230,7 +329,7 @@ const DashboardPage = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px', marginBottom: '32px' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px', marginBottom: '16px' }}>
                   <SkipBack size={24} onClick={handlePrev} style={{ cursor: 'pointer' }} className="control-icon" />
                   <button 
                     onClick={handlePlayPause}
@@ -241,6 +340,14 @@ const DashboardPage = () => {
                     {isPlaying ? <Pause size={28} fill="#000" color="#000" /> : <Play size={28} fill="#000" color="#000" style={{ marginLeft: '4px' }} />}
                   </button>
                   <SkipForward size={24} onClick={handleNext} style={{ cursor: 'pointer' }} className="control-icon" />
+                </div>
+
+                {/* Manual Sync Adjustment */}
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginBottom: '32px', opacity: 0.8 }}>
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', opacity: 0.5 }}>SYNC:</span>
+                  <button onClick={() => setSyncOffset(prev => prev - 1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>-1s</button>
+                  <span style={{ color: '#12d15e', fontWeight: 'bold', fontSize: '11px', minWidth: '25px', textAlign: 'center' }}>{syncOffset > 0 ? `+${syncOffset}` : syncOffset}s</span>
+                  <button onClick={() => setSyncOffset(prev => prev + 1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>+1s</button>
                 </div>
 
                 {/* Lyrics Language Toggle */}
@@ -271,7 +378,22 @@ const DashboardPage = () => {
                 {currentLang === 'en' ? (
                   segments.length > 0 ? (
                     segments.map((line: any, idx: number) => (
-                      <p key={idx} style={{ fontSize: '18px', fontWeight: '500', opacity: 0.9, lineHeight: '1.6' }}>{line.text}</p>
+                      <p 
+                        id={`line-${idx}`}
+                        key={idx} 
+                        style={{ 
+                          fontSize: '22px', 
+                          fontWeight: '600', 
+                          opacity: idx === activeIndex ? 1 : 0.3, 
+                          lineHeight: '1.6',
+                          color: idx === activeIndex ? '#12d15e' : '#fff',
+                          transition: 'all 0.3s',
+                          transform: idx === activeIndex ? 'scale(1.05)' : 'scale(1)',
+                          transformOrigin: 'left'
+                        }}
+                      >
+                        {line.text}
+                      </p>
                     ))
                   ) : (
                     <div style={{ opacity: 0.4, textAlign: 'center', marginTop: '40px' }}>
@@ -280,9 +402,38 @@ const DashboardPage = () => {
                     </div>
                   )
                 ) : (
-                  currentSong?.translations?.[currentLang === 'hi' ? 'hindi' : 'spanish']?.map((line: any, idx: number) => (
-                    <p key={idx} style={{ fontSize: '18px', fontWeight: '500', opacity: 0.9, lineHeight: '1.6', color: '#12d15e' }}>{line.text}</p>
-                  ))
+                  // Fallback: If no translation exists, show English but faded
+                  currentSong?.translations?.[currentLang === 'hi' ? 'hindi' : 'spanish']?.length > 0 ? (
+                    currentSong.translations[currentLang === 'hi' ? 'hindi' : 'spanish'].map((line: any, idx: number) => (
+                      <p 
+                        id={`line-${idx}`}
+                        key={idx} 
+                        style={{ 
+                          fontSize: '22px', 
+                          fontWeight: '600', 
+                          opacity: idx === activeIndex ? 1 : 0.3, 
+                          lineHeight: '1.6', 
+                          color: idx === activeIndex ? '#12d15e' : '#fff',
+                          transition: 'all 0.3s',
+                          transform: idx === activeIndex ? 'scale(1.05)' : 'scale(1)',
+                          transformOrigin: 'left'
+                        }}
+                      >
+                        {line.text}
+                      </p>
+                    ))
+                  ) : (
+                    <div style={{ opacity: 0.4, textAlign: 'center', marginTop: '40px' }}>
+                      <Globe size={40} style={{ marginBottom: '16px' }} />
+                      <p>No {currentLang === 'hi' ? 'Hindi' : 'Spanish'} translations found for this song.</p>
+                      <button 
+                        onClick={() => setCurrentLang('en')}
+                        style={{ background: '#12d15e', border: 'none', padding: '8px 16px', borderRadius: '20px', marginTop: '16px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Read in English
+                      </button>
+                    </div>
+                  )
                 )}
               </div>
             </div>
