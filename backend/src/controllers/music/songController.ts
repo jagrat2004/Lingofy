@@ -45,47 +45,55 @@ export const getSongs = async (req: Request, res: Response): Promise<void> => {
 export const autoTranslate = async (req: Request, res: Response): Promise<void> => {
   try {
     const { songId } = req.params;
-
     const segments = await LyricSegment.find({ songId }).sort({ segmentOrder: 1 });
 
     const hindi: any[] = [];
     const spanish: any[] = [];
 
+    // Use a more reliable public Google Translate endpoint
+    const translateText = async (text: string, target: string) => {
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${target}&dt=t&q=${encodeURI(text)}`;
+        const res = await axios.get(url);
+        // Google Translate returns an array structure: [[["translated", "original", ...]]]
+        return res.data[0][0][0];
+      } catch (err) {
+        console.error(`Translation error for ${target}:`, err);
+        return `[Error translating to ${target}]`;
+      }
+    };
+
+    console.log(`Starting translation for song ${songId}...`);
+
     for (let seg of segments) {
-      const text = seg.text;
+      const hiText = await translateText(seg.text, "hi");
+      const esText = await translateText(seg.text, "es");
 
-      try {
-        const hiRes = await axios.post("https://libretranslate.de/translate", {
-          q: text,
-          source: "en",
-          target: "hi",
-          format: "text"
-        });
-        hindi.push({
-          order: seg.segmentOrder,
-          text: hiRes.data.translatedText
-        });
-      } catch (e) {
-        hindi.push({ order: seg.segmentOrder, text: "[Translation Failed]" });
-      }
-
-      try {
-        const esRes = await axios.post("https://libretranslate.de/translate", {
-          q: text,
-          source: "en",
-          target: "es",
-          format: "text"
-        });
-        spanish.push({
-          order: seg.segmentOrder,
-          text: esRes.data.translatedText
-        });
-      } catch (e) {
-        spanish.push({ order: seg.segmentOrder, text: "[Translation Failed]" });
-      }
+      hindi.push({ order: seg.segmentOrder, text: hiText });
+      spanish.push({ order: seg.segmentOrder, text: esText });
     }
 
+    // Save translations to the Song document
+    await Song.findByIdAndUpdate(songId, {
+      translations: {
+        hindi,
+        spanish
+      }
+    });
+
+    console.log(`Translation complete for song ${songId}`);
     res.json({ hindi, spanish });
+  } catch (error: any) {
+    console.error("AutoTranslate Overall Error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getSegments = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { songId } = req.params;
+    const segments = await LyricSegment.find({ songId }).sort({ segmentOrder: 1 });
+    res.json(segments);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

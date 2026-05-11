@@ -70,13 +70,26 @@ const AdminDashboard = () => {
     setIsTranslating(true);
     try {
       const token = localStorage.getItem('token');
+      console.log("Requesting translation for:", savedSongId);
+      
       const response = await axios.post(`http://localhost:5000/api/admin/translate/${savedSongId}`, {}, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      setTranslations(response.data);
-    } catch (err) {
-      console.error(err);
-      alert('Translation failed. The API might be busy.');
+      
+      console.log("Translation Response:", response.data);
+      
+      if (response.data.hindi && response.data.hindi.length > 0) {
+        setTranslations(response.data);
+        // Force refresh preview lines to ensure they match the translation indices
+        const lines = form.lyrics.split('\n').filter(line => line.trim() !== '');
+        setPreviewLines(lines);
+        alert("✨ Translation complete! You can see them in the preview now.");
+      } else {
+        alert("Translation returned empty data. Please check the backend logs.");
+      }
+    } catch (err: any) {
+      console.error("Translation Error:", err);
+      alert('Translation failed: ' + (err.response?.data?.message || err.message));
     } finally {
       setIsTranslating(false);
     }

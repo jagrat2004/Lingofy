@@ -28,38 +28,73 @@ const SONGS_DATA = [
 
 const DashboardPage = () => {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [songs, setSongs] = useState<any[]>([]);
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [currentLang, setCurrentLang] = useState('en');
+  const [segments, setSegments] = useState<any[]>([]);
   const progressInterval = useRef<any>(null);
   const navigate = useNavigate();
 
-  const currentSong = SONGS_DATA[currentSongIndex];
+  const currentSong = songs[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
 
   useEffect(() => {
-    const fetchPreferences = async () => {
+    const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) { navigate('/login'); return; }
-        const res = await fetch('http://localhost:5000/api/preferences', {
+        
+        // Fetch Preferences
+        const prefRes = await fetch('http://localhost:5000/api/preferences', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (res.ok) {
-          const data = await res.json();
+        if (prefRes.ok) {
+          const data = await prefRes.json();
           setPreferences(data);
-        } else if (res.status === 401) { navigate('/login'); }
+        } else if (prefRes.status === 401) { navigate('/login'); }
+
+        // Fetch Songs
+        const songRes = await fetch('http://localhost:5000/api/admin', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (songRes.ok) {
+          const data = await songRes.json();
+          setSongs(data);
+        }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
-    fetchPreferences();
+    fetchData();
   }, [navigate]);
+
+  useEffect(() => {
+    if (currentSong?._id) {
+      // In a real app, we'd fetch segments for the current song
+      // For now, let's assume they are stored/fetched. 
+      // I'll add a fetch for segments too.
+      const fetchSegments = async () => {
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch(`http://localhost:5000/api/admin/segments/${currentSong._id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setSegments(data);
+          }
+        } catch (err) { console.error(err); }
+      };
+      fetchSegments();
+    }
+  }, [currentSong]);
 
   // Player Logic
   useEffect(() => {
     if (isPlaying) {
       progressInterval.current = setInterval(() => {
         setCurrentTime(prev => {
-          if (prev >= currentSong.duration) {
+          if (prev >= (currentSong.durationSeconds || 180)) {
             handleNext();
             return 0;
           }
@@ -75,12 +110,12 @@ const DashboardPage = () => {
   const handlePlayPause = () => setIsPlaying(!isPlaying);
   
   const handleNext = () => {
-    setCurrentSongIndex((prev) => (prev + 1) % SONGS_DATA.length);
+    setCurrentSongIndex((prev) => (prev + 1) % (songs.length || 1));
     setCurrentTime(0);
   };
 
   const handlePrev = () => {
-    setCurrentSongIndex((prev) => (prev - 1 + SONGS_DATA.length) % SONGS_DATA.length);
+    setCurrentSongIndex((prev) => (prev - 1 + (songs.length || 1)) % (songs.length || 1));
     setCurrentTime(0);
   };
 
@@ -173,11 +208,11 @@ const DashboardPage = () => {
             }}>
               <div style={{ display: 'flex', gap: '20px', marginBottom: '24px' }}>
                 <div style={{ width: '100px', height: '100px', borderRadius: '16px', background: '#333', overflow: 'hidden', boxShadow: isPlaying ? '0 0 20px rgba(18, 209, 94, 0.3)' : 'none', transition: 'all 0.5s' }}>
-                  <img src={currentSong.image} alt="Album" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: isPlaying ? 'scale(1.05)' : 'scale(1)', transition: 'all 0.5s' }} />
+                  <img src={currentSong.image || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop'} alt="Album" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: isPlaying ? 'scale(1.05)' : 'scale(1)', transition: 'all 0.5s' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 4px 0' }}>{currentSong.title}</h3>
-                  <p style={{ opacity: 0.6, margin: '0 0 12px 0' }}>{currentSong.artist}</p>
+                  <p style={{ opacity: 0.6, margin: '0 0 12px 0' }}>{currentSong.artistName || currentSong.artist}</p>
                   <div style={{ display: 'flex', gap: '12px' }}>
                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>HQ AUDIO</div>
                      <div style={{ background: 'rgba(18, 209, 94, 0.2)', color: '#12d15e', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>LYRICS</div>
@@ -185,32 +220,74 @@ const DashboardPage = () => {
                 </div>
               </div>
 
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', marginBottom: '8px', position: 'relative' }}>
-                  <div style={{ width: `${(currentTime / currentSong.duration) * 100}%`, height: '100%', background: '#12d15e', transition: 'width 0.2s linear' }}></div>
+                <div style={{ marginBottom: '24px' }}>
+                  <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', marginBottom: '8px', position: 'relative' }}>
+                    <div style={{ width: `${(currentTime / (currentSong.durationSeconds || 180)) * 100}%`, height: '100%', background: '#12d15e', transition: 'width 0.2s linear' }}></div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', opacity: 0.5 }}>
+                    <span>{formatTime(currentTime)}</span>
+                    <span>-{formatTime((currentSong.durationSeconds || 180) - currentTime)}</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', opacity: 0.5 }}>
-                  <span>{formatTime(currentTime)}</span>
-                  <span>-{formatTime(currentSong.duration - currentTime)}</span>
-                </div>
-              </div>
 
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px' }}>
-                <SkipBack size={24} onClick={handlePrev} style={{ cursor: 'pointer' }} className="control-icon" />
-                <button 
-                  onClick={handlePlayPause}
-                  style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
-                  onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
-                  onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  {isPlaying ? <Pause size={28} fill="#000" color="#000" /> : <Play size={28} fill="#000" color="#000" style={{ marginLeft: '4px' }} />}
-                </button>
-                <SkipForward size={24} onClick={handleNext} style={{ cursor: 'pointer' }} className="control-icon" />
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px', marginBottom: '32px' }}>
+                  <SkipBack size={24} onClick={handlePrev} style={{ cursor: 'pointer' }} className="control-icon" />
+                  <button 
+                    onClick={handlePlayPause}
+                    style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
+                    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
+                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    {isPlaying ? <Pause size={28} fill="#000" color="#000" /> : <Play size={28} fill="#000" color="#000" style={{ marginLeft: '4px' }} />}
+                  </button>
+                  <SkipForward size={24} onClick={handleNext} style={{ cursor: 'pointer' }} className="control-icon" />
+                </div>
+
+                {/* Lyrics Language Toggle */}
+                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '6px', borderRadius: '14px', gap: '4px' }}>
+                  <button 
+                    onClick={() => setCurrentLang('en')}
+                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: currentLang === 'en' ? '#fff' : 'transparent', color: currentLang === 'en' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: '0.2s' }}
+                  >English</button>
+                  <button 
+                    onClick={() => setCurrentLang('hi')}
+                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: currentLang === 'hi' ? '#fff' : 'transparent', color: currentLang === 'hi' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: '0.2s' }}
+                  >Hindi</button>
+                  <button 
+                    onClick={() => setCurrentLang('es')}
+                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: currentLang === 'es' ? '#fff' : 'transparent', color: currentLang === 'es' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: '0.2s' }}
+                  >Spanish</button>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Bottom Grid */}
+            {/* Lyrics Section */}
+            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '24px', padding: '32px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
+                <Globe size={20} color="#12d15e" />
+                <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Interactive Lyrics</h3>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: '400px', paddingRight: '10px' }}>
+                {currentLang === 'en' ? (
+                  segments.length > 0 ? (
+                    segments.map((line: any, idx: number) => (
+                      <p key={idx} style={{ fontSize: '18px', fontWeight: '500', opacity: 0.9, lineHeight: '1.6' }}>{line.text}</p>
+                    ))
+                  ) : (
+                    <div style={{ opacity: 0.4, textAlign: 'center', marginTop: '40px' }}>
+                      <Music size={40} style={{ marginBottom: '16px' }} />
+                      <p>English Lyrics will appear here when synced.</p>
+                    </div>
+                  )
+                ) : (
+                  currentSong?.translations?.[currentLang === 'hi' ? 'hindi' : 'spanish']?.map((line: any, idx: number) => (
+                    <p key={idx} style={{ fontSize: '18px', fontWeight: '500', opacity: 0.9, lineHeight: '1.6', color: '#12d15e' }}>{line.text}</p>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '48px' }} className="content-grid-desktop">
             <section>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -228,16 +305,17 @@ const DashboardPage = () => {
             </section>
 
             <section>
-              <h3 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '24px' }}>Recently Played</h3>
+              <h3 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '24px' }}>Song Library</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {SONGS_DATA.map((song, idx) => (
+                {songs.map((song, idx) => (
                   <SongItem 
-                    key={song.id} 
+                    key={song._id} 
                     song={song} 
                     active={currentSongIndex === idx} 
                     onClick={() => { setCurrentSongIndex(idx); setCurrentTime(0); setIsPlaying(true); }} 
                   />
                 ))}
+                {songs.length === 0 && <p style={{ opacity: 0.4 }}>No songs in the library yet.</p>}
               </div>
             </section>
           </div>
@@ -289,11 +367,11 @@ const SongItem = ({ song, active, onClick }: any) => (
     border: active ? '1px solid rgba(18, 209, 94, 0.3)' : '1px solid transparent'
   }}>
     <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#333', overflow: 'hidden' }}>
-      <img src={song.image} alt="Song" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <img src={song.image || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop'} alt="Song" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
     </div>
     <div style={{ flex: 1 }}>
       <div style={{ fontSize: '14px', fontWeight: 'bold', color: active ? '#12d15e' : '#fff' }}>{song.title}</div>
-      <div style={{ fontSize: '12px', opacity: 0.5 }}>{song.artist}</div>
+      <div style={{ fontSize: '12px', opacity: 0.5 }}>{song.artistName}</div>
     </div>
     {active ? <Volume2 size={16} color="#12d15e" /> : <Play size={14} fill="#fff" />}
   </div>

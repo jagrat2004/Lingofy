@@ -11,6 +11,10 @@ export interface ISong extends Document {
   instrumentalUrl?: string;
   bpm?: number;
   difficultyLevel: "beginner" | "intermediate" | "advanced";
+  translations?: {
+    hindi: { order: number; text: string }[];
+    spanish: { order: number; text: string }[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,6 +72,16 @@ const SongSchema: Schema<ISong> = new Schema(
       type: String,
       enum: ["beginner", "intermediate", "advanced"],
       default: "beginner"
+    },
+    translations: {
+      hindi: [{
+        order: { type: Number },
+        text: { type: String }
+      }],
+      spanish: [{
+        order: { type: Number },
+        text: { type: String }
+      }]
     }
   },
   {
