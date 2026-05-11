@@ -1,22 +1,18 @@
 import { Request, Response } from "express";
+import axios from "axios";
 import Song from "../../models/music/Song";
 import LyricSegment from "../../models/music/LyricSegment";
 
 export const addSong = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { title, artistName, language, lyrics } = req.body;
+    const { title, artistName, language, audioUrl, lyrics } = req.body;
 
-    // In this simplified admin flow, we store artistName directly 
-    // or handle artist creation. For now, let's keep it simple.
     const song = await Song.create({
       title,
-      artistName, // I'll need to add this to the model
+      artistName,
       language,
-      // Default values for other required fields if any
-      audioUrl: "pending",
-      durationSeconds: 0,
-      albumId: new (require('mongoose').Types.ObjectId)(), // Placeholder
-      artistId: new (require('mongoose').Types.ObjectId)(), // Placeholder
+      audioUrl,
+      durationSeconds: 0, // Default for now
     });
 
     // Save segments
@@ -41,6 +37,55 @@ export const getSongs = async (req: Request, res: Response): Promise<void> => {
   try {
     const songs = await Song.find();
     res.json(songs);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const autoTranslate = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { songId } = req.params;
+
+    const segments = await LyricSegment.find({ songId }).sort({ segmentOrder: 1 });
+
+    const hindi: any[] = [];
+    const spanish: any[] = [];
+
+    for (let seg of segments) {
+      const text = seg.text;
+
+      try {
+        const hiRes = await axios.post("https://libretranslate.de/translate", {
+          q: text,
+          source: "en",
+          target: "hi",
+          format: "text"
+        });
+        hindi.push({
+          order: seg.segmentOrder,
+          text: hiRes.data.translatedText
+        });
+      } catch (e) {
+        hindi.push({ order: seg.segmentOrder, text: "[Translation Failed]" });
+      }
+
+      try {
+        const esRes = await axios.post("https://libretranslate.de/translate", {
+          q: text,
+          source: "en",
+          target: "es",
+          format: "text"
+        });
+        spanish.push({
+          order: seg.segmentOrder,
+          text: esRes.data.translatedText
+        });
+      } catch (e) {
+        spanish.push({ order: seg.segmentOrder, text: "[Translation Failed]" });
+      }
+    }
+
+    res.json({ hindi, spanish });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

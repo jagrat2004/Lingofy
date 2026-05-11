@@ -30,7 +30,7 @@ Routes
 
 app.use("/api/auth", authRoutes);
 app.use("/api/preferences", preferenceRoutes);
-app.use("/api/songs", songRoutes);
+app.use("/api/admin", songRoutes);
 
 
 /*

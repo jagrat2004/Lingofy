@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -14,18 +15,23 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState('add-song');
-  const [songTitle, setSongTitle] = useState('');
-  const [artistName, setArtistName] = useState('');
-  const [language, setLanguage] = useState('English');
-  const [lyrics, setLyrics] = useState('');
+  const [form, setForm] = useState({
+    title: "",
+    artist: "",
+    language: "English",
+    audioUrl: "",
+    lyrics: ""
+  });
   const [previewLines, setPreviewLines] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [savedSongId, setSavedSongId] = useState<string | null>(null);
+  const [translations, setTranslations] = useState<{ hindi: any[], spanish: any[] } | null>(null);
   const [showToast, setShowToast] = useState(false);
   const navigate = useNavigate();
 
   const handlePreview = () => {
-    const lines = lyrics.split('\n').filter(line => line.trim() !== '');
+    const lines = form.lyrics.split('\n').filter(line => line.trim() !== '');
     setPreviewLines(lines);
   };
 
@@ -33,38 +39,60 @@ const AdminDashboard = () => {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/songs', {
-        method: 'POST',
+      const response = await axios.post('http://localhost:5000/api/admin/song', {
+        title: form.title,
+        artistName: form.artist,
+        language: form.language,
+        audioUrl: form.audioUrl,
+        lyrics: previewLines.length > 0 ? previewLines : form.lyrics.split('\n').filter(l => l.trim() !== '')
+      }, {
         headers: { 
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          title: songTitle,
-          artistName,
-          language,
-          lyrics: previewLines.length > 0 ? previewLines : lyrics.split('\n').filter(l => l.trim() !== '')
-        })
+        }
       });
 
-      if (res.ok) {
+      if (response.status === 201) {
         setShowToast(true);
+        setSavedSongId(response.data.song._id);
         setTimeout(() => setShowToast(false), 3000);
-        // Reset form
-        setSongTitle('');
-        setArtistName('');
-        setLyrics('');
-        setPreviewLines([]);
-      } else {
-        const data = await res.json();
-        alert(data.message || 'Error saving song');
+        // We don't reset form immediately so admin can translate it
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to save song');
+      alert(err.response?.data?.message || 'Failed to save song');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleTranslate = async () => {
+    if (!savedSongId) return;
+    setIsTranslating(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(`http://localhost:5000/api/admin/translate/${savedSongId}`, {}, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setTranslations(response.data);
+    } catch (err) {
+      console.error(err);
+      alert('Translation failed. The API might be busy.');
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleReset = () => {
+    setForm({
+      title: "",
+      artist: "",
+      language: "English",
+      audioUrl: "",
+      lyrics: ""
+    });
+    setPreviewLines([]);
+    setSavedSongId(null);
+    setTranslations(null);
   };
 
   return (
@@ -83,26 +111,22 @@ const AdminDashboard = () => {
           <SidebarItem 
             icon={<LayoutDashboard size={18} />} 
             label="Dashboard" 
-            active={activeTab === 'dashboard'} 
-            onClick={() => setActiveTab('dashboard')} 
+            active={false} 
           />
           <SidebarItem 
             icon={<PlusCircle size={18} />} 
             label="Add Song" 
-            active={activeTab === 'add-song'} 
-            onClick={() => setActiveTab('add-song')} 
+            active={true} 
           />
           <SidebarItem 
             icon={<ListMusic size={18} />} 
             label="Manage Songs" 
-            active={activeTab === 'manage'} 
-            onClick={() => setActiveTab('manage')} 
+            active={false} 
           />
           <SidebarItem 
             icon={<Users size={18} />} 
             label="Users" 
-            active={activeTab === 'users'} 
-            onClick={() => setActiveTab('users')} 
+            active={false} 
           />
         </nav>
 
@@ -150,9 +174,9 @@ const AdminDashboard = () => {
                     <input 
                       type="text" 
                       className="admin-input" 
-                      placeholder="e.g. Blinding Lights"
-                      value={songTitle}
-                      onChange={(e) => setSongTitle(e.target.value)}
+                      placeholder="Song Title"
+                      value={form.title}
+                      onChange={(e) => setForm({ ...form, title: e.target.value })}
                     />
                   </div>
                   <div className="input-group">
@@ -160,9 +184,9 @@ const AdminDashboard = () => {
                     <input 
                       type="text" 
                       className="admin-input" 
-                      placeholder="e.g. The Weeknd"
-                      value={artistName}
-                      onChange={(e) => setArtistName(e.target.value)}
+                      placeholder="Artist Name"
+                      value={form.artist}
+                      onChange={(e) => setForm({ ...form, artist: e.target.value })}
                     />
                   </div>
                 </div>
@@ -171,8 +195,8 @@ const AdminDashboard = () => {
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', marginBottom: '8px', opacity: 0.7 }}>Language</label>
                   <select 
                     className="admin-input" 
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
+                    value={form.language}
+                    onChange={(e) => setForm({ ...form, language: e.target.value })}
                     style={{ appearance: 'none', background: '#09090b' }}
                   >
                     <option>English</option>
@@ -180,24 +204,68 @@ const AdminDashboard = () => {
                     <option>Spanish</option>
                     <option>French</option>
                     <option>Japanese</option>
+                    <option>Korean</option>
                   </select>
+                </div>
+
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', marginBottom: '8px', opacity: 0.7 }}>YouTube URL</label>
+                  <input 
+                    type="text" 
+                    className="admin-input" 
+                    placeholder="YouTube URL"
+                    value={form.audioUrl}
+                    onChange={(e) => setForm({ ...form, audioUrl: e.target.value })}
+                  />
                 </div>
 
                 <div style={{ marginBottom: '32px' }}>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', marginBottom: '8px', opacity: 0.7 }}>Lyrics (Paste full lyrics here)</label>
+                  <p style={{ fontSize: '12px', opacity: 0.5, marginTop: '-4px', marginBottom: '12px' }}>
+                    Paste lyrics line by line. Each line will become one segment.
+                  </p>
                   <textarea 
                     className="admin-input" 
                     rows={12} 
-                    placeholder="Paste lyrics line by line..."
-                    value={lyrics}
-                    onChange={(e) => setLyrics(e.target.value)}
+                    placeholder="Paste English Lyrics (line by line)"
+                    value={form.lyrics}
+                    onChange={(e) => setForm({ ...form, lyrics: e.target.value })}
                     style={{ resize: 'vertical' }}
                   />
                 </div>
 
+                <div style={{ marginBottom: '32px' }}>
+                  <button 
+                    onClick={handleTranslate}
+                    disabled={!savedSongId || isTranslating}
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px', 
+                      borderRadius: '12px', 
+                      border: savedSongId ? '1px solid #a855f7' : '1px solid rgba(168, 85, 247, 0.4)', 
+                      background: savedSongId 
+                        ? 'linear-gradient(90deg, rgba(168, 85, 247, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)' 
+                        : 'linear-gradient(90deg, rgba(168, 85, 247, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%)', 
+                      color: savedSongId ? '#fff' : '#a855f7', 
+                      fontWeight: '600', 
+                      fontSize: '14px',
+                      cursor: !savedSongId || isTranslating ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: savedSongId ? '0 0 20px rgba(168, 85, 247, 0.2)' : 'none',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    {isTranslating ? <Loader2 size={18} className="spin" /> : '✨'} 
+                    {isTranslating ? 'Translating...' : savedSongId ? 'Auto Translate Now' : 'Auto Translate (Save first)'}
+                  </button>
+                </div>
+
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <button 
-                    onClick={handlePreview}
+                    onClick={handleReset}
                     style={{ 
                       flex: 1, 
                       padding: '14px', 
@@ -210,28 +278,28 @@ const AdminDashboard = () => {
                       transition: 'all 0.2s'
                     }}
                   >
-                    Preview Segments
+                    New Song
                   </button>
                   <button 
                     onClick={handleSave}
-                    disabled={isSaving}
+                    disabled={isSaving || !!savedSongId}
                     style={{ 
                       flex: 1, 
                       padding: '14px', 
                       borderRadius: '12px', 
                       border: 'none', 
-                      background: '#fff', 
-                      color: '#000', 
+                      background: !!savedSongId ? '#12793d' : '#fff', 
+                      color: !!savedSongId ? '#fff' : '#000', 
                       fontWeight: '700', 
-                      cursor: isSaving ? 'not-allowed' : 'pointer',
+                      cursor: (isSaving || !!savedSongId) ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: '10px'
                     }}
                   >
-                    {isSaving ? <Loader2 size={20} className="spin" /> : <Send size={18} />}
-                    {isSaving ? 'Saving...' : 'Save Song'}
+                    {isSaving ? <Loader2 size={20} className="spin" /> : (!!savedSongId ? <CheckCircle2 size={18} /> : <Send size={18} />)}
+                    {isSaving ? 'Saving...' : (!!savedSongId ? 'Saved' : 'Save Song')}
                   </button>
                 </div>
               </section>
@@ -259,7 +327,20 @@ const AdminDashboard = () => {
                     previewLines.map((line, idx) => (
                       <div key={idx} style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '16px', transition: 'all 0.2s' }}>
                         <div style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.4, fontWeight: '700', marginBottom: '6px' }}>Line {idx + 1}</div>
-                        <div style={{ fontSize: '14px', lineHeight: '1.5' }}>{line}</div>
+                        <div style={{ fontSize: '14px', lineHeight: '1.5', marginBottom: translations ? '12px' : '0' }}>{line}</div>
+                        
+                        {translations && (
+                          <div style={{ borderTop: '1px solid #27272a', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '12px' }}>
+                              <span style={{ opacity: 0.5, fontSize: '10px', marginRight: '6px' }}>HI:</span> 
+                              {translations.hindi[idx]?.text}
+                            </div>
+                            <div style={{ fontSize: '12px' }}>
+                              <span style={{ opacity: 0.5, fontSize: '10px', marginRight: '6px' }}>ES:</span> 
+                              {translations.spanish[idx]?.text}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}

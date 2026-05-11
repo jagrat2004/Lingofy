@@ -1,11 +1,12 @@
 import express from "express";
-import { addSong, getSongs } from "../controllers/music/songController";
+import { addSong, getSongs, autoTranslate } from "../controllers/music/songController";
 import { protect } from "../middleware/authMiddleware";
 import { adminOnly } from "../middleware/roleMiddleware";
 
 const router = express.Router();
 
-router.post("/", protect, adminOnly, addSong);
+router.post("/song", protect, adminOnly, addSong);
 router.get("/", getSongs);
+router.post("/translate/:songId", protect, adminOnly, autoTranslate);
 
 export default router;
