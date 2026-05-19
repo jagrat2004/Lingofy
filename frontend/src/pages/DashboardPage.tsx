@@ -251,7 +251,7 @@ const DashboardPage = () => {
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <NavItem icon={<Home size={20} />} label="Home" active />
-          <NavItem icon={<BookOpen size={20} />} label="Lessons" />
+          <NavItem icon={<BookOpen size={20} />} label="Lessons" onClick={() => navigate('/lessons')} />
           <NavItem icon={<Music size={20} />} label="Library" />
           <NavItem icon={<BarChart2 size={20} />} label="Statistics" />
         </nav>

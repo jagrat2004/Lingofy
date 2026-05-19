@@ -5,6 +5,7 @@ import SignupPage from './pages/SignupPage'
 import PreferencesPage from './pages/PreferencesPage'
 import DashboardPage from './pages/DashboardPage'
 import AdminDashboard from './pages/AdminDashboard'
+import LessonsPage from './pages/LessonsPage'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/preferences" element={<PreferencesPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/lessons" element={<LessonsPage />} />
       </Routes>
     </Router>
   )
