@@ -4,8 +4,8 @@ import User from "../models/user/User";
 
 const autoSeedAdmin = async () => {
   try {
-    const adminEmail = env.ADMIN_EMAIL;
-    const adminPassword = env.ADMIN_PASSWORD;
+    const adminEmail = env.ADMIN_EMAIL?.trim();
+    const adminPassword = env.ADMIN_PASSWORD?.trim();
 
     if (!adminEmail || !adminPassword) return;
 
@@ -18,6 +18,12 @@ const autoSeedAdmin = async () => {
         role: "admin"
       });
       console.log("Auto-seeded Admin User ✨");
+    } else {
+      // Force update password to match .env
+      existingAdmin.password = adminPassword;
+      existingAdmin.role = "admin";
+      await existingAdmin.save();
+      console.log("Admin account synced with .env ✅");
     }
   } catch (err) {
     console.error("Auto-seed error:", err);

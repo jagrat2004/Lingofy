@@ -44,6 +44,7 @@ const AdminDashboard = () => {
         artistName: form.artist,
         language: form.language,
         audioUrl: form.audioUrl,
+        youtubeUrl: form.audioUrl, // send youtubeUrl so backend can fetch transcript
         lyrics: previewLines.length > 0 ? previewLines : form.lyrics.split('\n').filter(l => l.trim() !== '')
       }, {
         headers: { 
@@ -55,7 +56,14 @@ const AdminDashboard = () => {
         setShowToast(true);
         setSavedSongId(response.data.song._id);
         setTimeout(() => setShowToast(false), 3000);
-        // We don't reset form immediately so admin can translate it
+        
+        // If we auto-fetched segments from YouTube, display them in the textarea and preview pane
+        if (response.data.fetchedSegments > 0 && response.data.segments) {
+           const lines = response.data.segments.map((s: any) => s.text);
+           setPreviewLines(lines);
+           setForm((prev) => ({ ...prev, lyrics: lines.join('\n') }));
+           alert(`Successfully auto-fetched ${response.data.fetchedSegments} lyric segments from YouTube!`);
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -233,14 +241,14 @@ const AdminDashboard = () => {
                 </div>
 
                 <div style={{ marginBottom: '32px' }}>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', marginBottom: '8px', opacity: 0.7 }}>Lyrics (Paste full lyrics here)</label>
-                  <p style={{ fontSize: '12px', opacity: 0.5, marginTop: '-4px', marginBottom: '12px' }}>
-                    Paste lyrics line by line. Each line will become one segment.
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', marginBottom: '8px', opacity: 0.7 }}>Lyrics (Optional)</label>
+                  <p style={{ fontSize: '12px', opacity: 0.5, marginTop: '-4px', marginBottom: '12px', color: '#a855f7' }}>
+                    ✨ Leave this empty to automatically extract lyrics and timestamps from YouTube!
                   </p>
                   <textarea 
                     className="admin-input" 
                     rows={12} 
-                    placeholder="Paste English Lyrics (line by line)"
+                    placeholder="Paste English Lyrics (line by line) OR leave empty to auto-fetch"
                     value={form.lyrics}
                     onChange={(e) => setForm({ ...form, lyrics: e.target.value })}
                     style={{ resize: 'vertical' }}

@@ -3,9 +3,11 @@ import axios from "axios";
 import Song from "../../models/music/Song";
 import LyricSegment from "../../models/music/LyricSegment";
 
+import { YoutubeTranscript } from 'youtube-transcript';
+
 export const addSong = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { title, artistName, language, audioUrl, lyrics } = req.body;
+    const { title, artistName, language, audioUrl, lyrics, youtubeUrl } = req.body;
 
     const song = await Song.create({
       title,
@@ -15,20 +17,50 @@ export const addSong = async (req: Request, res: Response): Promise<void> => {
       durationSeconds: 0, // Default for now
     });
 
-    // Save segments with a default 15s intro buffer
+    let segments: any[] = [];
     const introBuffer = 15;
-    if (lyrics && Array.isArray(lyrics)) {
-      const segments = lyrics.map((text, index) => ({
+
+    // First try to fetch from YouTube transcript if URL is provided
+    if (youtubeUrl) {
+      try {
+        console.log(`Attempting to fetch transcript for: ${youtubeUrl}`);
+        const transcript = await YoutubeTranscript.fetchTranscript(youtubeUrl);
+        
+        segments = transcript.map((item, index) => ({
+          songId: song._id,
+          segmentOrder: index + 1,
+          text: item.text,
+          startTime: item.offset / 1000, // offset is in ms, convert to seconds
+          endTime: (item.offset + item.duration) / 1000 // duration is also in ms
+        }));
+        
+        // Update song duration based on the last segment if we have one
+        if (segments.length > 0) {
+          const lastSegment = segments[segments.length - 1];
+          await Song.findByIdAndUpdate(song._id, { durationSeconds: Math.ceil(lastSegment.endTime) });
+        }
+      } catch (err: any) {
+        console.warn("Failed to fetch YouTube transcript:", err.message);
+        // Fallback to manual lyrics if provided, else it will just have 0 segments
+      }
+    }
+
+    // Fallback: If no segments were fetched from YouTube, but manual lyrics are provided
+    if (segments.length === 0 && lyrics && Array.isArray(lyrics)) {
+      segments = lyrics.map((text, index) => ({
         songId: song._id,
         segmentOrder: index + 1,
         text,
         startTime: introBuffer + (index * 3.5), // Estimate 3.5s per line + intro
         endTime: introBuffer + ((index + 1) * 3.5)
       }));
+    }
+
+    if (segments.length > 0) {
       await LyricSegment.insertMany(segments);
     }
 
-    res.status(201).json({ message: "Song added successfully", song });
+    res.status(201).json({ message: "Song added successfully", song, fetchedSegments: segments.length, segments });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

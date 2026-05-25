@@ -1,3 +1,4 @@
+
 import express, { Response } from "express";
 import { protect, AuthRequest } from "../middleware/authMiddleware";
 import LessonAttempt from "../models/LessonAttempt";
@@ -9,7 +10,7 @@ const router = express.Router();
 router.post("/generate", protect, async (req: AuthRequest, res: Response) => {
   try {
     const { language, level } = req.body;
-    
+
     if (!['hindi', 'spanish'].includes(language)) {
       return res.status(400).json({ message: "Invalid language" });
     }
@@ -24,7 +25,7 @@ router.post("/generate", protect, async (req: AuthRequest, res: Response) => {
     res.status(200).json(lessonData);
   } catch (error) {
     console.error("Error generating lesson:", error);
-    res.status(500).json({ message: "Failed to generate lesson. Please try again." });
+    res.status(500).json({ message: "Failed to generate lesson. Please try again.", error: (error as Error).message, stack: (error as Error).stack });
   }
 });
 
@@ -32,7 +33,7 @@ router.post("/generate", protect, async (req: AuthRequest, res: Response) => {
 router.post("/submit", protect, async (req: AuthRequest, res: Response) => {
   try {
     const { language, questions, userAnswers } = req.body;
-    
+
     if (!language || !questions || !userAnswers) {
       return res.status(400).json({ message: "Missing required fields" });
     }
@@ -41,11 +42,11 @@ router.post("/submit", protect, async (req: AuthRequest, res: Response) => {
     const results = userAnswers.map((ua: any) => {
       const question = questions.find((q: any) => q.id === ua.questionId);
       if (!question) return { ...ua, isCorrect: false };
-      
+
       const cleanUser = ua.answer.trim().toLowerCase();
       const cleanCorrect = question.correctAnswer.trim().toLowerCase();
       let isCorrect = cleanUser === cleanCorrect;
-      
+
       if (!isCorrect && language === 'hindi' && question.type === 'translate_word') {
         const matches = [...question.explanation.matchAll(/'([^']+)'/g)].map((m: any) => m[1].toLowerCase().trim());
         if (matches.includes(cleanUser)) {
@@ -53,7 +54,7 @@ router.post("/submit", protect, async (req: AuthRequest, res: Response) => {
         }
       }
       if (isCorrect) score++;
-      
+
       return {
         questionId: ua.questionId,
         isCorrect,
@@ -99,7 +100,7 @@ router.get("/history", protect, async (req: AuthRequest, res: Response) => {
       .sort({ completedAt: -1 })
       .limit(20)
       .select('language level score xpEarned completedAt');
-      
+
     res.status(200).json(history);
   } catch (error) {
     console.error("Error fetching lesson history:", error);

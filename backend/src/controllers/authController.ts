@@ -49,16 +49,18 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
+    const trimmedEmail = email?.trim();
+    const trimmedPassword = password?.trim();
 
     let user;
-    if (email.includes("@")) {
-      user = await User.findOne({ email });
+    if (trimmedEmail.includes("@")) {
+      user = await User.findOne({ email: trimmedEmail });
     } else {
-      user = await User.findOne({ name: email });
-      if (!user) user = await User.findOne({ email });
+      user = await User.findOne({ name: trimmedEmail });
+      if (!user) user = await User.findOne({ email: trimmedEmail });
     }
 
-    if (user && (await user.comparePassword(password))) {
+    if (user && (await user.comparePassword(trimmedPassword))) {
       const token = generateToken(user._id.toString(), user.email);
       
       // Check if preferences exist
