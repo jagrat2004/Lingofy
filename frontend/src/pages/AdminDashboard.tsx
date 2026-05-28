@@ -93,6 +93,16 @@ const AdminDashboard = () => {
   };
 
   React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    if (!token) {
+      navigate('/login');
+    } else if (role !== 'admin') {
+      navigate('/dashboard');
+    }
+  }, [navigate]);
+
+  React.useEffect(() => {
     if (activeView === 'users') {
       fetchUsers();
       setSelectedUser(null);
