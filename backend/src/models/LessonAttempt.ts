@@ -53,7 +53,7 @@ const LessonAttemptSchema: Schema = new Schema({
   level: { type: String, enum: ['beginner', 'intermediate', 'dynamic'], required: true },
   questions: { type: [QuestionSchema], required: true },
   userAnswers: { type: [UserAnswerSchema], required: true },
-  score: { type: Number, required: true, min: 0, max: 10 },
+  score: { type: Number, required: true, min: 0 },
   xpEarned: { type: Number, required: true },
   completedAt: { type: Date, default: Date.now }
 });

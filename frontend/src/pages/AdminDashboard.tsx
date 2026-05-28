@@ -10,7 +10,8 @@ import {
   ChevronRight,
   Send,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -28,7 +29,76 @@ const AdminDashboard = () => {
   const [savedSongId, setSavedSongId] = useState<string | null>(null);
   const [translations, setTranslations] = useState<{ hindi: any[], spanish: any[] } | null>(null);
   const [showToast, setShowToast] = useState(false);
+  
+  const [activeView, setActiveView] = useState<'add-song' | 'users'>('add-song');
+  const [users, setUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUserAttempts, setSelectedUserAttempts] = useState<any[]>([]);
+  const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+
   const navigate = useNavigate();
+
+  const fetchUsers = async () => {
+    setUsersLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('http://localhost:5000/api/admin/users', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setUsers(response.data);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to fetch users list');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const fetchUserAttempts = async (userId: string) => {
+    setAttemptsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://localhost:5000/api/admin/users/${userId}/attempts`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setSelectedUserAttempts(response.data);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to fetch user quiz history');
+    } finally {
+      setAttemptsLoading(false);
+    }
+  };
+
+  const handleReviewAttempt = async (attemptId: string) => {
+    setReviewLoading(true);
+    setShowReviewModal(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://localhost:5000/api/admin/attempts/${attemptId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setSelectedAttempt(response.data);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to fetch attempt details');
+      setShowReviewModal(false);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (activeView === 'users') {
+      fetchUsers();
+      setSelectedUser(null);
+      setSelectedUserAttempts([]);
+    }
+  }, [activeView]);
 
   const handlePreview = () => {
     const lines = form.lyrics.split('\n').filter(line => line.trim() !== '');
@@ -116,6 +186,151 @@ const AdminDashboard = () => {
     setTranslations(null);
   };
 
+  const renderUsersView = () => {
+    return (
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '8px' }}>User Management</h1>
+            <p style={{ opacity: 0.5 }}>Manage registered users and inspect their quiz completions and performance metrics.</p>
+          </div>
+          <div style={{ background: '#27272a', padding: '6px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 'bold' }}>
+            Total Users: {users.length}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 450px', gap: '32px', alignItems: 'start' }} className="admin-grid-layout">
+          {/* User List Panel */}
+          <section style={{ background: '#121214', border: '1px solid #1e1e21', borderRadius: '20px', padding: '32px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px' }}>Registered Users</h3>
+            {usersLoading ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.5 }}>Loading users...</div>
+            ) : users.length === 0 ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.5 }}>No registered users found.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflowY: 'auto', paddingRight: '8px' }}>
+                {users.map((user) => {
+                  const isSelected = selectedUser?._id === user._id;
+                  return (
+                    <div 
+                      key={user._id}
+                      onClick={() => {
+                        setSelectedUser(user);
+                        fetchUserAttempts(user._id);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '16px',
+                        borderRadius: '14px',
+                        background: isSelected ? 'rgba(168, 85, 247, 0.1)' : 'rgba(255,255,255,0.02)',
+                        border: `1px solid ${isSelected ? '#a855f7' : 'rgba(255,255,255,0.04)'}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '15px', fontWeight: 'bold', color: isSelected ? '#a855f7' : '#fff' }}>{user.name}</div>
+                        <div style={{ fontSize: '12px', opacity: 0.5, marginTop: '2px' }}>{user.email}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <span style={{ fontSize: '11px', opacity: 0.4 }}>
+                          Joined {new Date(user.createdAt).toLocaleDateString()}
+                        </span>
+                        <ChevronRight size={16} color={isSelected ? '#a855f7' : '#fff'} style={{ opacity: isSelected ? 1 : 0.4 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* User History Panel */}
+          <section style={{ position: 'sticky', top: '0', background: '#121214', border: '1px solid #1e1e21', borderRadius: '20px', padding: '32px', minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
+            {selectedUser ? (
+              <>
+                <div style={{ borderBottom: '1px solid #1e1e21', paddingBottom: '16px', marginBottom: '20px' }}>
+                  <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a855f7', fontWeight: 'bold', letterSpacing: '0.5px' }}>User Profile</div>
+                  <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '4px' }}>{selectedUser.name}</h3>
+                  <p style={{ fontSize: '12px', opacity: 0.5, margin: '2px 0 0 0' }}>{selectedUser.email}</p>
+                </div>
+
+                <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>Quiz & Lesson History</h4>
+
+                {attemptsLoading ? (
+                  <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', opacity: 0.5 }}>Loading quiz records...</div>
+                ) : selectedUserAttempts.length === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4, padding: '40px 0' }}>
+                    <PlusCircle size={28} style={{ marginBottom: '8px' }} />
+                    <p style={{ fontSize: '13px' }}>No quiz completions found for this user.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '45vh', overflowY: 'auto', paddingRight: '8px' }}>
+                    {selectedUserAttempts.map((attempt) => (
+                      <div 
+                        key={attempt._id}
+                        style={{
+                          background: 'rgba(255,255,255,0.02)',
+                          border: '1px solid rgba(255,255,255,0.04)',
+                          borderRadius: '12px',
+                          padding: '12px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'capitalize' }}>
+                            {attempt.level === 'dynamic' ? 'Song Practice' : 'Lesson'} • {attempt.language}
+                          </div>
+                          <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '2px' }}>
+                            {new Date(attempt.completedAt).toLocaleString()}
+                          </div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#12d15e' }}>{attempt.score} Correct</div>
+                            <div style={{ fontSize: '10px', color: '#eab308', fontWeight: 'bold' }}>+{attempt.xpEarned} XP</div>
+                          </div>
+                          <button
+                            onClick={() => handleReviewAttempt(attempt._id)}
+                            style={{
+                              background: '#27272a',
+                              border: 'none',
+                              color: '#fff',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              fontSize: '11px',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                            className="btn-hover"
+                          >
+                            Audit
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4, textAlign: 'center', padding: '60px 0' }}>
+                <Users size={36} style={{ marginBottom: '12px' }} />
+                <h4 style={{ fontSize: '15px', fontWeight: 'bold', margin: '0 0 4px 0' }}>No User Selected</h4>
+                <p style={{ fontSize: '13px', maxWidth: '250px' }}>Select a registered user from the left list to review their quiz performance.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#09090b', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
       
@@ -137,7 +352,8 @@ const AdminDashboard = () => {
           <SidebarItem 
             icon={<PlusCircle size={18} />} 
             label="Add Song" 
-            active={true} 
+            active={activeView === 'add-song'} 
+            onClick={() => setActiveView('add-song')}
           />
           <SidebarItem 
             icon={<ListMusic size={18} />} 
@@ -147,7 +363,8 @@ const AdminDashboard = () => {
           <SidebarItem 
             icon={<Users size={18} />} 
             label="Users" 
-            active={false} 
+            active={activeView === 'users'} 
+            onClick={() => setActiveView('users')}
           />
         </nav>
 
@@ -178,7 +395,8 @@ const AdminDashboard = () => {
 
         {/* Content Area */}
         <div style={{ padding: '40px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          {activeView === 'users' ? renderUsersView() : (
+            <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
             
             <div style={{ marginBottom: '32px' }}>
               <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '8px' }}>Add New Song</h1>
@@ -367,9 +585,9 @@ const AdminDashboard = () => {
                   )}
                 </div>
               </section>
-
             </div>
-          </div>
+            </div>
+          )}
         </div>
       </main>
 
@@ -392,6 +610,162 @@ const AdminDashboard = () => {
         }}>
           <CheckCircle2 size={20} color="#12793d" />
           <span style={{ fontWeight: '600' }}>Song saved successfully!</span>
+        </div>
+      )}
+
+      {/* Quiz Detail Audit Modal */}
+      {showReviewModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #121214 0%, #09090b 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '28px',
+            padding: '32px',
+            maxWidth: '650px',
+            width: '100%',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => { setShowReviewModal(false); setSelectedAttempt(null); }}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                background: 'rgba(255,255,255,0.05)',
+                border: 'none',
+                color: '#fff',
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={18} />
+            </button>
+
+            {reviewLoading ? (
+              <div style={{ padding: '60px 0', textAlign: 'center', opacity: 0.6 }}>Loading quiz details...</div>
+            ) : selectedAttempt ? (
+              <>
+                <div style={{ marginBottom: '24px' }}>
+                  <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#a855f7', fontWeight: 'bold', letterSpacing: '1px' }}>
+                    User Quiz Audit • {selectedAttempt.userId?.name || 'User'}
+                  </span>
+                  <h2 style={{ fontSize: '24px', fontWeight: '800', marginTop: '6px', marginBottom: '8px' }}>
+                    {selectedAttempt.level === 'dynamic' ? 'Song Practice Quiz' : 'Lesson Quiz'}
+                  </h2>
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '13px', opacity: 0.6 }}>
+                    <span>User: <strong>{selectedAttempt.userId?.name} ({selectedAttempt.userId?.email})</strong></span>
+                    <span>•</span>
+                    <span>Score: <strong>{selectedAttempt.score}/{selectedAttempt.questions?.length}</strong></span>
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {selectedAttempt.questions?.map((question: any, idx: number) => {
+                    const userAnswerObj = selectedAttempt.userAnswers?.find((ua: any) => ua.questionId === question.id);
+                    const isCorrect = userAnswerObj?.isCorrect || false;
+                    const userAnswerText = userAnswerObj?.answer || '';
+
+                    return (
+                      <div 
+                        key={question.id} 
+                        style={{
+                          background: 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${isCorrect ? 'rgba(18, 209, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'}`,
+                          borderRadius: '16px',
+                          padding: '20px',
+                          borderLeftWidth: '5px',
+                          borderLeftColor: isCorrect ? '#12d15e' : '#ef4444'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'rgba(255,255,255,0.4)' }}>Question {idx + 1}</span>
+                          <span style={{
+                            background: isCorrect ? 'rgba(18, 209, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: isCorrect ? '#12d15e' : '#ef4444',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 'bold'
+                          }}>
+                            {isCorrect ? 'Correct' : 'Incorrect'}
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px' }}>{question.questionText}</p>
+
+                        {question.targetWord && (
+                          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff', textAlign: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px' }}>
+                            {question.targetWord}
+                          </div>
+                        )}
+
+                        {question.sentence && (
+                          <div style={{ fontSize: '16px', textAlign: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px' }}>
+                            {question.sentence}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+                          {question.options?.map((opt: string, oIdx: number) => {
+                            const isUserSelected = opt === userAnswerText;
+                            const isCorrectOpt = opt === question.correctAnswer;
+                            
+                            let bg = 'rgba(255,255,255,0.02)';
+                            let border = '1px solid rgba(255,255,255,0.05)';
+                            let color = '#fff';
+                            
+                            if (isCorrectOpt) {
+                              bg = 'rgba(18, 209, 94, 0.1)';
+                              border = '1px solid #12d15e';
+                            } else if (isUserSelected && !isCorrect) {
+                              bg = 'rgba(239, 68, 68, 0.1)';
+                              border = '1px solid #ef4444';
+                            }
+
+                            return (
+                              <div key={oIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderRadius: '10px', background: bg, border: border, color: color, fontSize: '13px' }}>
+                                <span>{opt}</span>
+                                {isCorrectOpt && <span style={{ color: '#12d15e', fontWeight: 'bold', fontSize: '11px' }}>Correct Answer</span>}
+                                {isUserSelected && !isCorrect && <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '11px' }}>User Answer</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', background: 'rgba(255,255,255,0.01)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid rgba(255,255,255,0.2)' }}>
+                          <strong>Explanation:</strong> {question.explanation}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.6 }}>No details found.</div>
+            )}
+          </div>
         </div>
       )}
 

@@ -190,3 +190,101 @@ JSON Schema:
   const result = await generateWithRetry(prompt);
   return result;
 };
+
+export const generateSongLesson = async (
+  language: 'hindi' | 'spanish',
+  songTitle: string,
+  songArtist: string,
+  lyricsWithTranslations: { english: string; translation: string }[]
+) => {
+  const randomSeed = Math.floor(Math.random() * 100000);
+  
+  // Format the lyrics context for the prompt
+  const lyricsContext = lyricsWithTranslations
+    .map((l, i) => `Line ${i + 1}: English: "${l.english}" | ${language === 'hindi' ? 'Hindi' : 'Spanish'}: "${l.translation}"`)
+    .join("\n");
+
+  const prompt = `
+You are a language tutor for Lingofy, a music-based language learning app.
+A user just finished listening to the song "${songTitle}" by "${songArtist}".
+Your job is to teach the user ${language} vocabulary and phrases using the words and lines from this song.
+
+Session ID (guarantees unique questions): ${randomSeed}
+Language being taught: ${language}
+Song Title: "${songTitle}"
+Song Artist: "${songArtist}"
+
+Lyrics and Translations from the song:
+${lyricsContext}
+
+ABSOLUTE RULES — READ CAREFULLY:
+
+1. Every single question must be directly related to the vocabulary, words, phrases, or sentences from the provided lyrics.
+2. ALL questionText must be written in ENGLISH ONLY. Never write the question itself in Hindi or Spanish.
+3. Generate exactly 12 questions (minimum 2 of each of the 4 question types: translate_word, multiple_choice, fill_blank, match_meaning).
+
+4. Question structure depends on type:
+
+   translate_word:
+   - questionText: "What is the ${language} word/phrase for '[English word/phrase]'?" (make sure the English word/phrase is from the lyrics)
+   - targetWord: the English word/phrase (shown large on screen)
+   - options: 4 ${language} words/phrases (one is correct translation, others are plausible distractors in ${language})
+   - correctAnswer: the correct ${language} translation
+   
+   multiple_choice:
+   - questionText: "What does '[${language} word/phrase]' mean in English?" (make sure the ${language} word/phrase is from the translations)
+   - options: 4 English meanings
+   - correctAnswer: correct English meaning
+   
+   fill_blank:
+   - questionText: "Fill in the blank to complete the ${language} sentence from the song:"
+   - sentence shown: the ${language} sentence from the song translations with a ___ gap replacing a key word.
+   - always include the English translation in parentheses after, e.g. "Sentence with ___ (English translation of the full sentence)"
+   - options: 4 ${language} words that could fill the blank (one is the correct word from the song)
+   - correctAnswer: the correct ${language} word
+   
+   match_meaning:
+   - questionText: "What does this ${language} word/phrase mean?"
+   - targetWord: the ${language} word/phrase (shown large)
+   - options: 4 English meanings
+   - correctAnswer: correct English meaning
+
+5. Each question must test a DIFFERENT word or phrase — no repeats.
+
+6. For Hindi questions:
+   - Use Devanagari script for Hindi words in options/answers.
+   - Add romanized pronunciation in explanation.
+   - Example option: "भूखा (bhookha)"
+
+7. For Spanish questions:
+   - Use proper Spanish with accents (á é í ó ú ñ ¿ ¡).
+
+8. Make questions educational:
+   - Focus on verbs, adjectives, common nouns, and phrases that appear in the song lyrics.
+   
+9. correctAnswer must EXACTLY match one of the 4 options (same spelling, script, and capitalization).
+
+Respond with ONLY raw JSON — zero markdown, zero backticks, zero text outside the JSON object.
+
+JSON Schema:
+{
+  "lessonTitle": "Song Quiz: ${songTitle}",
+  "language": "${language}",
+  "questions": [
+    {
+      "id": 1,
+      "type": "translate_word | multiple_choice | fill_blank | match_meaning",
+      "questionText": "ALWAYS IN ENGLISH",
+      "targetWord": "word shown large on screen (English for translate_word, ${language} for match_meaning)",
+      "sentence": "full sentence with ___ for fill_blank type only",
+      "options": ["option1", "option2", "option3", "option4"],
+      "correctAnswer": "must exactly match one option",
+      "explanation": "1 sentence in English explaining the answer + pronunciation tip for Hindi"
+    }
+  ]
+}
+`;
+
+  const result = await generateWithRetry(prompt);
+  return result;
+};

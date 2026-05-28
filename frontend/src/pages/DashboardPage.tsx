@@ -14,7 +14,10 @@ import {
   Music,
   BarChart2,
   LogOut,
-  Volume2
+  Volume2,
+  Menu,
+  X,
+  ChevronLeft
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -37,6 +40,17 @@ const DashboardPage = () => {
   const [segments, setSegments] = useState<any[]>([]);
   const [ytReady, setYtReady] = useState(false);
   const [syncOffset, setSyncOffset] = useState(0); // Manual sync adjustment
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [modalMode, setModalMode] = useState<'completed' | 'practice'>('practice');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'home' | 'statistics'>('home');
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [activeTooltip, setActiveTooltip] = useState<any>(null);
   const navigate = useNavigate();
 
   const currentSong = songs[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, audioUrl: '', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
@@ -78,6 +92,80 @@ const DashboardPage = () => {
     };
     fetchData();
   }, [navigate]);
+
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/lessons/history', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error("Error fetching history:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'statistics') {
+      fetchHistory();
+    }
+  }, [activeTab]);
+
+  const handleReviewAttempt = async (attemptId: string) => {
+    setReviewLoading(true);
+    setShowReviewModal(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:5000/api/lessons/attempt/${attemptId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedAttempt(data);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to load attempt details.");
+      setShowReviewModal(false);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  // Chart data calculations
+  const chartData = useMemo(() => {
+    const last7 = [...history].slice(0, 7).reverse();
+    return last7.map((attempt, index) => ({
+      index,
+      label: new Date(attempt.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      score: attempt.score,
+      xp: attempt.xpEarned,
+    }));
+  }, [history]);
+
+  const width = 500;
+  const height = 250;
+  const xPadding = 50;
+  const yPadding = 40;
+  const plotWidth = width - 2 * xPadding;
+  const plotHeight = height - 2 * yPadding;
+
+  const points = chartData.map((d, i) => {
+    const x = xPadding + (chartData.length > 1 ? (i * plotWidth / (chartData.length - 1)) : plotWidth / 2);
+    const y = height - yPadding - (d.score * plotHeight / 12); // score out of 12 max
+    return { x, y, score: d.score, label: d.label, xp: d.xp };
+  });
+
+  const polylinePoints = points.map(p => `${p.x},${p.y}`).join(' ');
+  const areaPath = points.length > 0 
+    ? `M ${points[0].x} ${height - yPadding} ` + points.map(p => `L ${p.x} ${p.y}`).join(' ') + ` L ${points[points.length - 1].x} ${height - yPadding} Z`
+    : '';
 
   useEffect(() => {
     if (currentSong?._id) {
@@ -146,6 +234,10 @@ const DashboardPage = () => {
                 setIsPlaying(true);
               } else if (event.data === (window as any).YT.PlayerState.PAUSED) {
                 setIsPlaying(false);
+              } else if (event.data === (window as any).YT.PlayerState.ENDED || event.data === 0) {
+                setIsPlaying(false);
+                setModalMode('completed');
+                setShowQuizModal(true);
               }
             },
             'onReady': () => {
@@ -207,6 +299,187 @@ const DashboardPage = () => {
 
 
 
+  const renderStatistics = () => {
+    // Calculate overview stats
+    const totalQuizzes = history.length;
+    const totalXp = history.reduce((acc, curr) => acc + (curr.xpEarned || 0), 0);
+    const avgScore = totalQuizzes > 0 
+      ? (history.reduce((acc, curr) => acc + curr.score, 0) / totalQuizzes).toFixed(1) 
+      : '0.0';
+
+    return (
+      <div style={{ width: '100%', maxWidth: '1200px' }}>
+        <div style={{ marginBottom: '32px' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 8px 0' }}>Your Learning Analytics</h1>
+          <p style={{ opacity: 0.6, margin: 0 }}>Review your performance, track your score trends, and inspect your past quiz attempts.</p>
+        </div>
+
+        {/* Overview Stats Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '24px', marginBottom: '40px' }}>
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px', textAlign: 'center' }}>
+            <div style={{ opacity: 0.5, fontSize: '13px', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '8px' }}>Quizzes Attempted</div>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#12d15e' }}>{totalQuizzes}</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px', textAlign: 'center' }}>
+            <div style={{ opacity: 0.5, fontSize: '13px', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '8px' }}>Average Score</div>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#a855f7' }}>{avgScore}<span style={{ fontSize: '16px', opacity: 0.5 }}>/12</span></div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '20px', padding: '24px', textAlign: 'center' }}>
+            <div style={{ opacity: 0.5, fontSize: '13px', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '8px' }}>Total XP Earned</div>
+            <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#eab308' }}>{totalXp} XP</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '48px' }} className="content-grid-desktop">
+          {/* Performance Chart Card */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '32px', position: 'relative' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '24px' }}>Score Trends (Last 7 Quizzes)</h3>
+            
+            {points.length === 0 ? (
+              <div style={{ height: '250px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
+                <BarChart2 size={40} style={{ marginBottom: '12px' }} />
+                <p>Complete a lesson or quiz to see your progress chart!</p>
+              </div>
+            ) : (
+              <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
+                <svg width="100%" height="250" viewBox="0 0 500 250" style={{ overflow: 'visible' }}>
+                  <defs>
+                    <linearGradient id="chart-glow" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#12d15e" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#12d15e" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Horizontal Gridlines */}
+                  {[0, 3, 6, 9, 12].map(scoreVal => {
+                    const yVal = height - yPadding - (scoreVal * plotHeight / 12);
+                    return (
+                      <g key={scoreVal}>
+                        <line x1={xPadding} y1={yVal} x2={width - xPadding} y2={yVal} stroke="rgba(255,255,255,0.05)" strokeDasharray="3,3" />
+                        <text x={xPadding - 10} y={yVal + 4} fill="rgba(255,255,255,0.4)" fontSize="11" textAnchor="end">{scoreVal}</text>
+                      </g>
+                    );
+                  })}
+
+                  {/* X Axis Date Labels */}
+                  {points.map((p, i) => (
+                    <text key={i} x={p.x} y={height - yPadding + 20} fill="rgba(255,255,255,0.4)" fontSize="10" textAnchor="middle">{p.label}</text>
+                  ))}
+
+                  {/* Shaded Area Below Line */}
+                  <path d={areaPath} fill="url(#chart-glow)" />
+
+                  {/* Line Chart */}
+                  <polyline points={polylinePoints} fill="none" stroke="#12d15e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px rgba(18, 209, 94, 0.4))' }} />
+
+                  {/* Circular Markers */}
+                  {points.map((p, i) => (
+                    <circle 
+                      key={i} 
+                      cx={p.x} 
+                      cy={p.y} 
+                      r="6" 
+                      fill="#000" 
+                      stroke="#12d15e" 
+                      strokeWidth="3" 
+                      cursor="pointer"
+                      style={{ transition: 'r 0.2s' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.setAttribute('r', '8');
+                        setActiveTooltip(p);
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.setAttribute('r', '6');
+                        setActiveTooltip(null);
+                      }}
+                    />
+                  ))}
+                </svg>
+
+                {/* Floating Tooltip */}
+                {activeTooltip && (
+                  <div style={{
+                    position: 'absolute',
+                    left: `${(activeTooltip.x / 500) * 100}%`,
+                    top: `${(activeTooltip.y / 250) * 100 - 25}%`,
+                    transform: 'translate(-50%, -100%)',
+                    background: '#12d15e',
+                    color: '#000',
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    pointerEvents: 'none',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+                    zIndex: 100
+                  }}>
+                    Score: {activeTooltip.score} | {activeTooltip.xp} XP
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* History List Card */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '32px', display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '24px' }}>Quiz History</h3>
+            
+            {historyLoading ? (
+              <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <div>Loading history...</div>
+              </div>
+            ) : history.length === 0 ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
+                <BookOpen size={40} style={{ marginBottom: '12px' }} />
+                <p>No quiz history found yet.</p>
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto', maxHeight: '250px', paddingRight: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {history.map((attempt) => (
+                    <div key={attempt._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '14px', padding: '12px 16px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', textTransform: 'capitalize' }}>
+                          {attempt.level === 'dynamic' ? 'Song Practice' : 'Lesson'} • {attempt.language}
+                        </div>
+                        <div style={{ fontSize: '11px', opacity: 0.5, marginTop: '2px' }}>
+                          {new Date(attempt.completedAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#12d15e' }}>{attempt.score} Correct</div>
+                          <div style={{ fontSize: '11px', color: '#eab308', fontWeight: 'bold' }}>+{attempt.xpEarned} XP</div>
+                        </div>
+                        <button 
+                          onClick={() => handleReviewAttempt(attempt._id)}
+                          style={{
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '8px',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          className="btn-hover"
+                        >
+                          Review
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0f0f0f', color: '#fff' }}>
@@ -240,30 +513,118 @@ const DashboardPage = () => {
       }}>
         <div id="youtube-player"></div>
       </div>
+      {/* Mobile Sidebar Hamburger Toggle */}
+      <button 
+        onClick={() => setIsMobileOpen(true)}
+        className="mobile-toggle"
+        style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          zIndex: 90,
+          background: 'rgba(255, 255, 255, 0.08)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '12px',
+          padding: '10px',
+          cursor: 'pointer',
+          display: 'none',
+          color: '#fff',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+        }}
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Mobile overlay */}
+      {isMobileOpen && (
+        <div 
+          onClick={() => setIsMobileOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 95
+          }}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="desktop-sidebar" style={{ 
-        width: '280px', background: '#000', borderRight: '1px solid rgba(255,255,255,0.05)',
-        padding: '40px 24px', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100
+      <aside className={`desktop-sidebar ${isMobileOpen ? 'sidebar-open' : ''}`} style={{ 
+        width: isSidebarCollapsed ? '88px' : '280px', background: '#000', borderRight: '1px solid rgba(255,255,255,0.05)',
+        padding: isSidebarCollapsed ? '40px 12px' : '40px 24px', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' }}>
-          <img src="/Logo-1.png" alt="Logo" style={{ width: '40px' }} />
-          <span style={{ fontSize: '24px', fontWeight: '800' }}>Lingofy</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', marginBottom: '48px', position: 'relative' }}>
+          {!isSidebarCollapsed && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img src="/Logo-1.png" alt="Logo" style={{ width: '40px' }} />
+              <span style={{ fontSize: '24px', fontWeight: '800' }}>Lingofy</span>
+            </div>
+          )}
+          {isSidebarCollapsed && (
+            <img src="/Logo-1.png" alt="Logo" style={{ width: '40px' }} />
+          )}
+          
+          <button 
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="desktop-toggle-btn"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px',
+              borderRadius: '8px',
+              transition: 'all 0.2s',
+            }}
+          >
+            {isSidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          </button>
+          
+          <button 
+            onClick={() => setIsMobileOpen(false)}
+            className="mobile-close-btn"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+              display: 'none',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px',
+              borderRadius: '8px'
+            }}
+          >
+            <X size={20} />
+          </button>
         </div>
+        
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-          <NavItem icon={<Home size={20} />} label="Home" active />
-          <NavItem icon={<BookOpen size={20} />} label="Lessons" onClick={() => navigate('/lessons')} />
-          <NavItem icon={<Music size={20} />} label="Library" />
-          <NavItem icon={<BarChart2 size={20} />} label="Statistics" />
+          <NavItem icon={<Home size={20} />} label="Home" active={activeTab === 'home'} onClick={() => { setActiveTab('home'); setIsMobileOpen(false); }} collapsed={isSidebarCollapsed} />
+          <NavItem icon={<BookOpen size={20} />} label="Lessons" onClick={() => navigate('/lessons')} collapsed={isSidebarCollapsed} />
+          <NavItem icon={<Music size={20} />} label="Library" collapsed={isSidebarCollapsed} />
+          <NavItem icon={<BarChart2 size={20} />} label="Statistics" active={activeTab === 'statistics'} onClick={() => { setActiveTab('statistics'); setIsMobileOpen(false); }} collapsed={isSidebarCollapsed} />
         </nav>
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '24px' }}>
-          <NavItem icon={<Settings size={20} />} label="Settings" />
-          <NavItem icon={<LogOut size={20} />} label="Logout" onClick={() => { localStorage.clear(); navigate('/login'); }} />
+          <NavItem icon={<Settings size={20} />} label="Settings" collapsed={isSidebarCollapsed} />
+          <NavItem icon={<LogOut size={20} />} label="Logout" onClick={() => { localStorage.clear(); navigate('/login'); }} collapsed={isSidebarCollapsed} />
         </div>
       </aside>
 
       {/* Main Content */}
-      <main style={{ flex: 1, marginLeft: 'var(--sidebar-width, 0px)', padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-        <div style={{ width: '100%', maxWidth: '1200px' }}>
+      <main className="main-content" style={{ flex: 1, marginLeft: 'var(--sidebar-width, 0px)', padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+        {activeTab === 'statistics' ? renderStatistics() : (
+          <div style={{ width: '100%', maxWidth: '1200px' }}>
           
           <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '32px', marginBottom: '48px' }}>
             
@@ -312,9 +673,35 @@ const DashboardPage = () => {
                 <div style={{ flex: 1 }}>
                   <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 4px 0' }}>{currentSong.title}</h3>
                   <p style={{ opacity: 0.6, margin: '0 0 12px 0' }}>{currentSong.artistName || currentSong.artist}</p>
-                  <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>HQ AUDIO</div>
                      <div style={{ background: 'rgba(18, 209, 94, 0.2)', color: '#12d15e', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>LYRICS</div>
+                     {currentSong?._id && (
+                       <button 
+                         onClick={() => {
+                           setModalMode('practice');
+                           setShowQuizModal(true);
+                         }}
+                         className="btn-hover"
+                         style={{ 
+                           background: 'rgba(18, 209, 94, 0.1)', 
+                           color: '#12d15e', 
+                           border: '1px solid rgba(18, 209, 94, 0.3)', 
+                           padding: '4px 10px', 
+                           borderRadius: '6px', 
+                           fontSize: '11px', 
+                           fontWeight: 'bold', 
+                           cursor: 'pointer', 
+                           display: 'flex', 
+                           alignItems: 'center', 
+                           gap: '4px',
+                           transition: 'all 0.2s',
+                           marginLeft: 'auto'
+                         }}
+                       >
+                         <BookOpen size={12} /> Practice Song
+                       </button>
+                     )}
                   </div>
                 </div>
               </div>
@@ -470,15 +857,321 @@ const DashboardPage = () => {
               </div>
             </section>
           </div>
-        </div>
+          </div>
+        )}
       </main>
 
+      {showQuizModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px',
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1e1e30 0%, #0c0c14 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '28px',
+            padding: '40px',
+            maxWidth: '500px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 30px rgba(18, 209, 94, 0.2)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '150px', height: '150px', background: 'rgba(18, 209, 94, 0.15)', filter: 'blur(50px)', borderRadius: '50%' }}></div>
+            
+            <div style={{ display: 'inline-flex', background: 'rgba(18, 209, 94, 0.1)', padding: '16px', borderRadius: '50%', marginBottom: '24px', color: '#12d15e' }}>
+              <Music size={40} className="pulse-icon" />
+            </div>
+            
+            <h2 style={{ fontSize: '28px', fontWeight: '800', marginBottom: '12px', background: 'linear-gradient(135deg, #fff 0%, #12d15e 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              {modalMode === 'completed' ? 'Song Completed! 🎉' : 'Practice Song 🎵'}
+            </h2>
+            <p style={{ opacity: 0.8, fontSize: '16px', lineHeight: '1.5', marginBottom: '32px' }}>
+              {modalMode === 'completed' 
+                ? `Great job listening to ${currentSong.title}. Choose a language to start practicing vocabulary:`
+                : `Select a language to practice vocabulary from ${currentSong.title}:`
+              }
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <button 
+                  onClick={() => {
+                    setShowQuizModal(false);
+                    navigate(`/lessons?songId=${currentSong._id}&language=hindi`);
+                  }}
+                  className="btn-hover"
+                  style={{
+                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '16px',
+                    borderRadius: '16px',
+                    fontWeight: '800',
+                    fontSize: '16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 10px 20px rgba(124, 58, 237, 0.2)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span style={{ fontSize: '28px' }}>🇮🇳</span>
+                  <span>Hindi</span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    setShowQuizModal(false);
+                    navigate(`/lessons?songId=${currentSong._id}&language=spanish`);
+                  }}
+                  className="btn-hover"
+                  style={{
+                    background: 'linear-gradient(135deg, #12d15e 0%, #0bb04c 100%)',
+                    color: '#000',
+                    border: 'none',
+                    padding: '16px',
+                    borderRadius: '16px',
+                    fontWeight: '800',
+                    fontSize: '16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 10px 20px rgba(18, 209, 94, 0.2)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span style={{ fontSize: '28px' }}>🇪🇸</span>
+                  <span>Spanish</span>
+                </button>
+              </div>
+              
+              <button 
+                onClick={() => setShowQuizModal(false)}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: '#fff',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  padding: '14px',
+                  borderRadius: '16px',
+                  fontWeight: '600',
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  marginTop: '12px'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+              >
+                {modalMode === 'completed' ? 'Maybe Later' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {showReviewModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #121214 0%, #09090b 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '28px',
+            padding: '32px',
+            maxWidth: '650px',
+            width: '100%',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => { setShowReviewModal(false); setSelectedAttempt(null); }}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                background: 'rgba(255,255,255,0.05)',
+                border: 'none',
+                color: '#fff',
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={18} />
+            </button>
+
+            {reviewLoading ? (
+              <div style={{ padding: '60px 0', textAlign: 'center', opacity: 0.6 }}>Loading quiz review details...</div>
+            ) : selectedAttempt ? (
+              <>
+                <div style={{ marginBottom: '24px' }}>
+                  <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#12d15e', fontWeight: 'bold', letterSpacing: '1px' }}>
+                    Quiz Review • {selectedAttempt.language}
+                  </span>
+                  <h2 style={{ fontSize: '24px', fontWeight: '800', marginTop: '6px', marginBottom: '8px' }}>
+                    {selectedAttempt.level === 'dynamic' ? 'Song Practice Quiz' : 'Lesson Quiz Completion'}
+                  </h2>
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '13px', opacity: 0.6 }}>
+                    <span>Score: <strong>{selectedAttempt.score}/{selectedAttempt.questions?.length}</strong></span>
+                    <span>•</span>
+                    <span>XP Earned: <strong style={{ color: '#eab308' }}>+{selectedAttempt.xpEarned} XP</strong></span>
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {selectedAttempt.questions?.map((question: any, idx: number) => {
+                    const userAnswerObj = selectedAttempt.userAnswers?.find((ua: any) => ua.questionId === question.id);
+                    const isCorrect = userAnswerObj?.isCorrect || false;
+                    const userAnswerText = userAnswerObj?.answer || '';
+
+                    return (
+                      <div 
+                        key={question.id} 
+                        style={{
+                          background: 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${isCorrect ? 'rgba(18, 209, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'}`,
+                          borderRadius: '16px',
+                          padding: '20px',
+                          borderLeftWidth: '5px',
+                          borderLeftColor: isCorrect ? '#12d15e' : '#ef4444'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'rgba(255,255,255,0.4)' }}>Question {idx + 1}</span>
+                          <span style={{
+                            background: isCorrect ? 'rgba(18, 209, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: isCorrect ? '#12d15e' : '#ef4444',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 'bold'
+                          }}>
+                            {isCorrect ? 'Correct' : 'Incorrect'}
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px' }}>{question.questionText}</p>
+
+                        {question.targetWord && (
+                          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff', textAlign: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px' }}>
+                            {question.targetWord}
+                          </div>
+                        )}
+
+                        {question.sentence && (
+                          <div style={{ fontSize: '16px', textAlign: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px' }}>
+                            {question.sentence}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+                          {question.options?.map((opt: string, oIdx: number) => {
+                            const isUserSelected = opt === userAnswerText;
+                            const isCorrectOpt = opt === question.correctAnswer;
+                            
+                            let bg = 'rgba(255,255,255,0.02)';
+                            let border = '1px solid rgba(255,255,255,0.05)';
+                            let color = '#fff';
+                            
+                            if (isCorrectOpt) {
+                              bg = 'rgba(18, 209, 94, 0.1)';
+                              border = '1px solid #12d15e';
+                            } else if (isUserSelected && !isCorrect) {
+                              bg = 'rgba(239, 68, 68, 0.1)';
+                              border = '1px solid #ef4444';
+                            }
+
+                            return (
+                              <div key={oIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderRadius: '10px', background: bg, border: border, color: color, fontSize: '13px' }}>
+                                <span>{opt}</span>
+                                {isCorrectOpt && <span style={{ color: '#12d15e', fontWeight: 'bold', fontSize: '11px' }}>Correct Answer</span>}
+                                {isUserSelected && !isCorrect && <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '11px' }}>Your Answer</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', background: 'rgba(255,255,255,0.01)', padding: '10px 14px', borderRadius: '8px', borderLeft: '3px solid rgba(255,255,255,0.2)' }}>
+                          <strong>Explanation:</strong> {question.explanation}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.6 }}>No details found.</div>
+            )}
+          </div>
+        </div>
+      )}
+
       <style>{`
-        :root { --sidebar-width: 280px; }
+        :root { --sidebar-width: ${isSidebarCollapsed ? '88px' : '280px'}; }
+        .desktop-sidebar {
+          transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease, transform 0.3s ease;
+        }
+        .main-content {
+          transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
         @media (max-width: 1024px) {
           :root { --sidebar-width: 0px; }
-          .desktop-sidebar { display: none !important; }
-          main { padding: 24px !important; padding-bottom: 100px !important; }
+          .desktop-sidebar { 
+            transform: translateX(${isMobileOpen ? '0' : '-100%'});
+            display: flex !important;
+            width: 280px !important;
+            padding: 40px 24px !important;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          }
+          .mobile-toggle {
+            display: flex !important;
+          }
+          .desktop-toggle-btn {
+            display: none !important;
+          }
+          .mobile-close-btn {
+            display: flex !important;
+          }
+          main { padding: 24px !important; padding-bottom: 100px !important; padding-top: 80px !important; }
           .content-grid-desktop { grid-template-columns: 1fr !important; }
         }
         .btn-hover:hover { filter: brightness(1.1); transform: translateY(-2px); }
@@ -491,13 +1184,14 @@ const DashboardPage = () => {
   );
 };
 
-const NavItem = ({ icon, label, active = false, onClick }: any) => (
+const NavItem = ({ icon, label, active = false, onClick, collapsed = false }: any) => (
   <div onClick={onClick} style={{ 
-    display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', borderRadius: '12px', 
+    display: 'flex', alignItems: 'center', gap: collapsed ? '0' : '16px', padding: '12px 16px', borderRadius: '12px', 
     background: active ? 'rgba(18, 209, 94, 0.1)' : 'transparent',
-    color: active ? '#12d15e' : 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.2s', fontWeight: active ? '700' : '500'
+    color: active ? '#12d15e' : 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.2s', fontWeight: active ? '700' : '500',
+    justifyContent: collapsed ? 'center' : 'flex-start'
   }}>
-    {icon} <span>{label}</span>
+    {icon} {!collapsed && <span>{label}</span>}
   </div>
 );
 

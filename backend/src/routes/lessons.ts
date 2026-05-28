@@ -2,7 +2,9 @@
 import express, { Response } from "express";
 import { protect, AuthRequest } from "../middleware/authMiddleware";
 import LessonAttempt from "../models/LessonAttempt";
-import { generateLesson } from "../services/lessonService";
+import { generateLesson, generateSongLesson } from "../services/lessonService";
+import Song from "../models/music/Song";
+import LyricSegment from "../models/music/LyricSegment";
 
 const router = express.Router();
 
@@ -26,6 +28,44 @@ router.post("/generate", protect, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Error generating lesson:", error);
     res.status(500).json({ message: "Failed to generate lesson. Please try again.", error: (error as Error).message, stack: (error as Error).stack });
+  }
+});
+
+// POST /api/lessons/generate-from-song
+router.post("/generate-from-song", protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const { songId, language } = req.body;
+
+    if (!songId) {
+      return res.status(400).json({ message: "Song ID is required" });
+    }
+
+    if (!['hindi', 'spanish'].includes(language)) {
+      return res.status(400).json({ message: "Invalid or missing language" });
+    }
+
+    const song = await Song.findById(songId);
+    if (!song) {
+      return res.status(404).json({ message: "Song not found" });
+    }
+
+    const segments = await LyricSegment.find({ songId }).sort({ segmentOrder: 1 });
+    
+    // Map lyrics with translations
+    const targetTranslations = language === 'hindi' ? song.translations?.hindi : song.translations?.spanish;
+    const lyricsWithTranslations = segments.map(seg => {
+      const translationObj = targetTranslations?.find((t: any) => t.order === seg.segmentOrder);
+      return {
+        english: seg.text,
+        translation: translationObj ? translationObj.text : ""
+      };
+    }).filter(item => item.english);
+
+    const lessonData = await generateSongLesson(language, song.title, song.artistName || '', lyricsWithTranslations);
+    res.status(200).json(lessonData);
+  } catch (error) {
+    console.error("Error generating song lesson:", error);
+    res.status(500).json({ message: "Failed to generate lesson from song. Please try again.", error: (error as Error).message });
   }
 });
 
@@ -83,7 +123,7 @@ router.post("/submit", protect, async (req: AuthRequest, res: Response) => {
 
     res.status(200).json({
       score,
-      total: 10,
+      total: questions.length,
       xpEarned,
       results
     });
@@ -105,6 +145,20 @@ router.get("/history", protect, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Error fetching lesson history:", error);
     res.status(500).json({ message: "Failed to fetch history." });
+  }
+});
+
+// GET /api/lessons/attempt/:attemptId
+router.get("/attempt/:attemptId", protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const attempt = await LessonAttempt.findOne({ _id: req.params.attemptId, userId: req.user._id });
+    if (!attempt) {
+      return res.status(404).json({ message: "Attempt not found" });
+    }
+    res.status(200).json(attempt);
+  } catch (error) {
+    console.error("Error fetching attempt details:", error);
+    res.status(500).json({ message: "Failed to fetch attempt details." });
   }
 });
 

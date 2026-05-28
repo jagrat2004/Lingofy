@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Home, BookOpen, Music, BarChart2, Settings, LogOut, ChevronRight, X, Check, XCircle
+  Home, BookOpen, Music, BarChart2, Settings, LogOut, ChevronRight, X, Check, XCircle, Menu, ChevronLeft
 } from 'lucide-react';
 
 type ViewState = 'setup' | 'loading' | 'quiz' | 'results';
@@ -29,21 +29,42 @@ const LessonsPage = () => {
   const [userAnswers, setUserAnswers] = useState<any[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<string>('');
   const [isAnswerChecked, setIsAnswerChecked] = useState(false);
-  const [lessonResults, setLessonResults] = useState<any>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const startLesson = async () => {
-    if (!language) return;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const songIdParam = params.get('songId');
+    const langParam = params.get('language') as Language;
+
+    if (songIdParam && langParam) {
+      setLanguage(langParam);
+      startLesson(langParam, songIdParam);
+    }
+  }, []);
+
+  const startLesson = async (overrideLang?: any, songIdParam?: string) => {
+    const activeLang = (typeof overrideLang === 'string' ? overrideLang : null) || language;
+    if (!activeLang) return;
     setView('loading');
     
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/lessons/generate', {
+      const hasSong = songIdParam || new URLSearchParams(window.location.search).get('songId');
+      const endpoint = hasSong
+        ? 'http://localhost:5000/api/lessons/generate-from-song'
+        : 'http://localhost:5000/api/lessons/generate';
+      
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ language })
+        body: JSON.stringify({
+          language: activeLang,
+          songId: hasSong || undefined
+        })
       });
       
       if (!res.ok) throw new Error('Failed to generate lesson');
@@ -172,7 +193,7 @@ const LessonsPage = () => {
 
 
       <button 
-        onClick={startLesson}
+        onClick={() => startLesson()}
         disabled={!language}
         style={{
           width: '100%', maxWidth: '300px', padding: '16px', borderRadius: '12px', border: 'none',
@@ -197,7 +218,7 @@ const LessonsPage = () => {
     const question = questions[currentQuestionIdx];
     if (!question) return null;
 
-    const progress = ((currentQuestionIdx) / 10) * 100;
+    const progress = ((currentQuestionIdx) / (questions.length || 10)) * 100;
     const bubbleBg = question.type === 'multiple_choice' || question.type === 'translate_word' ? '#1a73e8' : '#22c55e';
 
     return (
@@ -208,7 +229,7 @@ const LessonsPage = () => {
           <div style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
             <div style={{ width: `${progress}%`, height: '100%', background: '#22c55e', transition: 'width 0.3s' }}></div>
           </div>
-          <div style={{ color: '#9ca3af', fontSize: '14px', fontWeight: 'bold' }}>{currentQuestionIdx + 1} / 10</div>
+          <div style={{ color: '#9ca3af', fontSize: '14px', fontWeight: 'bold' }}>{currentQuestionIdx + 1} / {questions.length}</div>
         </div>
 
         {/* Question Area */}
@@ -368,7 +389,8 @@ const LessonsPage = () => {
 
   const renderResults = () => {
     if (!lessonResults) return null;
-    const stars = lessonResults.score >= 8 ? 3 : lessonResults.score >= 5 ? 2 : 1;
+    const pct = lessonResults.score / (lessonResults.total || 10);
+    const stars = pct >= 0.8 ? 3 : pct >= 0.5 ? 2 : 1;
 
     return (
       <div style={{ maxWidth: '600px', width: '100%', margin: '0 auto', paddingBottom: '40px', paddingTop: '40px' }}>
@@ -383,12 +405,12 @@ const LessonsPage = () => {
               width: '120px', height: '120px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)',
               border: '1px solid rgba(255,255,255,0.12)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
             }}>
-              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>{lessonResults.score}/10</div>
+              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>{lessonResults.score}/{lessonResults.total || 10}</div>
               <div style={{ fontSize: '14px', color: '#22c55e', fontWeight: 'bold' }}>+{lessonResults.xpEarned} XP</div>
             </div>
 
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>{10 - lessonResults.score}</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>{(lessonResults.total || 10) - lessonResults.score}</div>
               <div style={{ fontSize: '12px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Incorrect</div>
             </div>
           </div>
@@ -440,52 +462,163 @@ const LessonsPage = () => {
 
   return (
     <div style={{ background: '#000000', minHeight: '100vh', color: '#fff', fontFamily: 'Inter, sans-serif', display: 'flex' }}>
+      {/* Mobile Sidebar Hamburger Toggle */}
+      <button 
+        onClick={() => setIsMobileOpen(true)}
+        className="mobile-toggle"
+        style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          zIndex: 90,
+          background: 'rgba(255, 255, 255, 0.08)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '12px',
+          padding: '10px',
+          cursor: 'pointer',
+          display: 'none',
+          color: '#fff',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+        }}
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Mobile overlay */}
+      {isMobileOpen && (
+        <div 
+          onClick={() => setIsMobileOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 95
+          }}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="desktop-sidebar" style={{ 
-        width: '280px', background: '#000', borderRight: '1px solid rgba(255,255,255,0.05)',
-        padding: '40px 24px', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100
+      <aside className={`desktop-sidebar ${isMobileOpen ? 'sidebar-open' : ''}`} style={{ 
+        width: isSidebarCollapsed ? '88px' : '280px', background: '#000', borderRight: '1px solid rgba(255,255,255,0.05)',
+        padding: isSidebarCollapsed ? '40px 12px' : '40px 24px', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' }}>
-          <img src="/Logo-1.png" alt="Logo" style={{ width: '40px' }} />
-          <span style={{ fontSize: '24px', fontWeight: '800' }}>Lingofy</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', marginBottom: '48px', position: 'relative' }}>
+          {!isSidebarCollapsed && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img src="/Logo-1.png" alt="Logo" style={{ width: '40px' }} />
+              <span style={{ fontSize: '24px', fontWeight: '800' }}>Lingofy</span>
+            </div>
+          )}
+          {isSidebarCollapsed && (
+            <img src="/Logo-1.png" alt="Logo" style={{ width: '40px' }} />
+          )}
+          
+          <button 
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="desktop-toggle-btn"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px',
+              borderRadius: '8px',
+              transition: 'all 0.2s',
+            }}
+          >
+            {isSidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          </button>
+          
+          <button 
+            onClick={() => setIsMobileOpen(false)}
+            className="mobile-close-btn"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+              display: 'none',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px',
+              borderRadius: '8px'
+            }}
+          >
+            <X size={20} />
+          </button>
         </div>
+        
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-          <NavItem icon={<Home size={20} />} label="Home" onClick={() => navigate('/dashboard')} />
-          <NavItem icon={<BookOpen size={20} />} label="Lessons" active />
-          <NavItem icon={<Music size={20} />} label="Library" />
-          <NavItem icon={<BarChart2 size={20} />} label="Statistics" />
+          <NavItem icon={<Home size={20} />} label="Home" onClick={() => navigate('/dashboard')} collapsed={isSidebarCollapsed} />
+          <NavItem icon={<BookOpen size={20} />} label="Lessons" active collapsed={isSidebarCollapsed} />
+          <NavItem icon={<Music size={20} />} label="Library" collapsed={isSidebarCollapsed} />
+          <NavItem icon={<BarChart2 size={20} />} label="Statistics" collapsed={isSidebarCollapsed} />
         </nav>
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '24px' }}>
-          <NavItem icon={<Settings size={20} />} label="Settings" />
-          <NavItem icon={<LogOut size={20} />} label="Logout" onClick={() => { localStorage.clear(); navigate('/login'); }} />
+          <NavItem icon={<Settings size={20} />} label="Settings" collapsed={isSidebarCollapsed} />
+          <NavItem icon={<LogOut size={20} />} label="Logout" onClick={() => { localStorage.clear(); navigate('/login'); }} collapsed={isSidebarCollapsed} />
         </div>
       </aside>
 
       {/* Main Content */}
-      <main style={{ flex: 1, marginLeft: '280px', padding: '40px', display: 'flex', flexDirection: 'column', width: '100%' }}>
+      <main className="main-content" style={{ flex: 1, marginLeft: 'var(--sidebar-width, 0px)', padding: '40px', display: 'flex', flexDirection: 'column', width: '100%', transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
         {view === 'setup' && renderSetup()}
         {view === 'loading' && renderLoading()}
         {view === 'quiz' && renderQuiz()}
         {view === 'results' && renderResults()}
       </main>
       <style>{`
+        :root { --sidebar-width: ${isSidebarCollapsed ? '88px' : '280px'}; }
+        .desktop-sidebar {
+          transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease, transform 0.3s ease;
+        }
+        .main-content {
+          transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
         @media (max-width: 1024px) {
-          .desktop-sidebar { display: none !important; }
-          main { marginLeft: 0 !important; padding: 24px !important; }
+          :root { --sidebar-width: 0px; }
+          .desktop-sidebar { 
+            transform: translateX(${isMobileOpen ? '0' : '-100%'});
+            display: flex !important;
+            width: 280px !important;
+            padding: 40px 24px !important;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          }
+          .mobile-toggle {
+            display: flex !important;
+          }
+          .desktop-toggle-btn {
+            display: none !important;
+          }
+          .mobile-close-btn {
+            display: flex !important;
+          }
+          main { padding: 24px !important; padding-bottom: 100px !important; padding-top: 80px !important; margin-left: 0 !important; }
         }
       `}</style>
     </div>
   );
 };
 
-const NavItem = ({ icon, label, active = false, onClick }: any) => (
+const NavItem = ({ icon, label, active = false, onClick, collapsed = false }: any) => (
   <div onClick={onClick} style={{ 
-    display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', borderRadius: '12px', 
+    display: 'flex', alignItems: 'center', gap: collapsed ? '0' : '16px', padding: '12px 16px', borderRadius: '12px', 
     background: active ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
-    color: active ? '#22c55e' : 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.2s', fontWeight: active ? '700' : '500'
+    color: active ? '#22c55e' : 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.2s', fontWeight: active ? '700' : '500',
+    justifyContent: collapsed ? 'center' : 'flex-start'
   }}>
-    {icon} <span>{label}</span>
-    {active && <div style={{ marginLeft: 'auto', width: '4px', height: '20px', background: '#22c55e', borderRadius: '2px' }} />}
+    {icon} {!collapsed && <span>{label}</span>}
+    {active && !collapsed && <div style={{ marginLeft: 'auto', width: '4px', height: '20px', background: '#22c55e', borderRadius: '2px' }} />}
   </div>
 );
 
