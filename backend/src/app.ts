@@ -4,6 +4,7 @@ import authRoutes from "./routes/authRoutes";
 import preferenceRoutes from "./routes/preferenceRoutes";
 import songRoutes from "./routes/songRoutes";
 import lessonsRouter from "./routes/lessons";
+import playlistRoutes from "./routes/playlistRoutes";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/preferences", preferenceRoutes);
 app.use("/api/admin", songRoutes);
 app.use("/api/lessons", lessonsRouter);
+app.use("/api/playlists", playlistRoutes);
 
 
 /*

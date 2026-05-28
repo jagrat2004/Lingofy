@@ -17,7 +17,10 @@ import {
   Volume2,
   Menu,
   X,
-  ChevronLeft
+  ChevronLeft,
+  ListMusic,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -44,7 +47,7 @@ const DashboardPage = () => {
   const [modalMode, setModalMode] = useState<'completed' | 'practice'>('practice');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'statistics'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'statistics' | 'library'>('home');
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
@@ -52,9 +55,21 @@ const DashboardPage = () => {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<any>(null);
   const [hideVideo, setHideVideo] = useState(false);
+
+  // Playlists & Queue States
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [playlistsLoading, setPlaylistsLoading] = useState(false);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<any>(null);
+  const [selectedPlaylistLoading, setSelectedPlaylistLoading] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
+  const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
+  const [currentQueue, setCurrentQueue] = useState<any[]>([]);
+  const [queueName, setQueueName] = useState('Song Library');
+
   const navigate = useNavigate();
 
-  const currentSong = songs[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, audioUrl: '', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
+  const currentSong = currentQueue[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, audioUrl: '', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
 
   // Get YouTube ID from URL
   const getYouTubeId = (url: string) => {
@@ -88,6 +103,7 @@ const DashboardPage = () => {
         if (songRes.ok) {
           const data = await songRes.json();
           setSongs(data);
+          setCurrentQueue(data);
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
@@ -281,14 +297,14 @@ const DashboardPage = () => {
   };
   
   const handleNext = () => {
-    setCurrentSongIndex((prev) => (prev + 1) % (songs.length || 1));
+    setCurrentSongIndex((prev) => (prev + 1) % (currentQueue.length || 1));
     setCurrentTime(0);
     setHideVideo(false);
     if (playerRef.current?.stopVideo) playerRef.current.stopVideo();
   };
 
   const handlePrev = () => {
-    setCurrentSongIndex((prev) => (prev - 1 + (songs.length || 1)) % (songs.length || 1));
+    setCurrentSongIndex((prev) => (prev - 1 + (currentQueue.length || 1)) % (currentQueue.length || 1));
     setCurrentTime(0);
     setHideVideo(false);
     if (playerRef.current?.stopVideo) playerRef.current.stopVideo();
@@ -483,6 +499,483 @@ const DashboardPage = () => {
     );
   };
 
+  const fetchPlaylists = async () => {
+    setPlaylistsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/playlists', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPlaylists(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPlaylistsLoading(false);
+    }
+  };
+
+  const fetchPlaylistDetails = async (playlistId: string) => {
+    setSelectedPlaylistLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:5000/api/playlists/${playlistId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedPlaylist(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSelectedPlaylistLoading(false);
+    }
+  };
+
+  const handleCreatePlaylist = async () => {
+    if (!newPlaylistTitle.trim()) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/playlists', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ title: newPlaylistTitle })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPlaylists(prev => [data, ...prev]);
+        setNewPlaylistTitle('');
+        setShowCreateModal(false);
+      } else {
+        const errData = await res.json();
+        alert(errData.message || 'Failed to create playlist');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeletePlaylist = async (playlistId: string) => {
+    if (!confirm('Are you sure you want to delete this playlist?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:5000/api/playlists/${playlistId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setPlaylists(prev => prev.filter(p => p._id !== playlistId));
+        setSelectedPlaylist(null);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddSongToPlaylist = async (songId: string) => {
+    if (!selectedPlaylist) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:5000/api/playlists/${selectedPlaylist.playlist._id}/songs`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ songId })
+      });
+      if (res.ok) {
+        fetchPlaylistDetails(selectedPlaylist.playlist._id);
+      } else {
+        const errData = await res.json();
+        alert(errData.message || 'Failed to add song to playlist');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRemoveSongFromPlaylist = async (songId: string) => {
+    if (!selectedPlaylist) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:5000/api/playlists/${selectedPlaylist.playlist._id}/songs/${songId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchPlaylistDetails(selectedPlaylist.playlist._id);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePlayPlaylist = (playlistSongs: any[], playlistTitle: string) => {
+    if (playlistSongs.length === 0) {
+      alert("This playlist has no songs yet. Add some songs first!");
+      return;
+    }
+    setCurrentQueue(playlistSongs);
+    setQueueName(playlistTitle);
+    setCurrentSongIndex(0);
+    setCurrentTime(0);
+    setIsPlaying(true);
+    setHideVideo(false);
+  };
+
+  const handlePlaySongFromPlaylist = (playlistSongs: any[], playlistTitle: string, index: number) => {
+    setCurrentQueue(playlistSongs);
+    setQueueName(playlistTitle);
+    setCurrentSongIndex(index);
+    setCurrentTime(0);
+    setIsPlaying(true);
+    setHideVideo(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'library') {
+      fetchPlaylists();
+      setSelectedPlaylist(null);
+    }
+  }, [activeTab]);
+
+  const renderLibrary = () => {
+    const filteredSongs = playlistSearchQuery.trim() === "" 
+      ? songs 
+      : songs.filter(s => 
+          s.title.toLowerCase().includes(playlistSearchQuery.toLowerCase()) || 
+          s.artistName.toLowerCase().includes(playlistSearchQuery.toLowerCase())
+        );
+
+    return (
+      <div style={{ width: '100%', maxWidth: '1200px' }}>
+        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 8px 0' }}>Your Library</h1>
+            <p style={{ opacity: 0.6, margin: 0 }}>Create, manage, and listen to your custom playlists.</p>
+          </div>
+          <button 
+            onClick={() => setShowCreateModal(true)}
+            className="btn-hover"
+            style={{
+              background: 'linear-gradient(135deg, #12d15e 0%, #0bb04c 100%)',
+              color: '#000',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 10px 20px rgba(18, 209, 94, 0.15)'
+            }}
+          >
+            <Plus size={16} /> Create Playlist
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '32px', alignItems: 'start' }} className="content-grid-desktop">
+          
+          {/* Playlists Sidebar */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '24px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <ListMusic size={18} color="#12d15e" /> My Playlists
+            </h3>
+
+            {playlistsLoading ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.5 }}>Loading playlists...</div>
+            ) : playlists.length === 0 ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.4 }}>
+                <p style={{ fontSize: '14px', marginBottom: '16px' }}>No playlists created yet.</p>
+                <button 
+                  onClick={() => setShowCreateModal(true)}
+                  style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', padding: '8px 16px', borderRadius: '10px', fontSize: '12px', cursor: 'pointer' }}
+                >
+                  Create Your First
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '60vh', overflowY: 'auto', paddingRight: '4px' }}>
+                {playlists.map((playlist) => {
+                  const isSelected = selectedPlaylist?.playlist?._id === playlist._id;
+                  const isCurrentlyPlaying = queueName === playlist.title;
+
+                  return (
+                    <div 
+                      key={playlist._id}
+                      onClick={() => fetchPlaylistDetails(playlist._id)}
+                      className="btn-hover"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '16px',
+                        borderRadius: '16px',
+                        background: isSelected ? 'rgba(18, 209, 94, 0.08)' : 'rgba(255,255,255,0.02)',
+                        border: `1px solid ${isSelected ? '#12d15e' : 'rgba(255,255,255,0.04)'}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ 
+                          width: '40px', 
+                          height: '40px', 
+                          borderRadius: '10px', 
+                          background: isSelected ? 'rgba(18, 209, 94, 0.15)' : 'rgba(255,255,255,0.05)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: isSelected ? '#12d15e' : '#fff'
+                        }}>
+                          <Music size={18} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold', color: isSelected ? '#12d15e' : '#fff' }}>
+                            {playlist.title}
+                          </div>
+                          <div style={{ fontSize: '11px', opacity: 0.4, marginTop: '2px' }}>
+                            {isCurrentlyPlaying ? 'Currently Playing' : 'Playlist'}
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight size={16} opacity={isSelected ? 1 : 0.4} color={isSelected ? '#12d15e' : '#fff'} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Playlist Detail Panel */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '32px', minHeight: '400px' }}>
+            {selectedPlaylistLoading ? (
+              <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
+                Loading playlist details...
+              </div>
+            ) : selectedPlaylist ? (
+              <div>
+                {/* Playlist Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '20px', marginBottom: '24px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '24px', fontWeight: 'bold' }}>{selectedPlaylist.playlist.title}</h2>
+                    <p style={{ opacity: 0.5, fontSize: '13px', margin: '4px 0 0 0' }}>
+                      {selectedPlaylist.songs.length} {selectedPlaylist.songs.length === 1 ? 'song' : 'songs'} in playlist
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button 
+                      onClick={() => handlePlayPlaylist(selectedPlaylist.songs, selectedPlaylist.playlist.title)}
+                      className="btn-hover"
+                      style={{
+                        background: '#12d15e',
+                        color: '#000',
+                        border: 'none',
+                        padding: '10px 20px',
+                        borderRadius: '12px',
+                        fontWeight: 'bold',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Play size={14} fill="#000" /> Play Playlist
+                    </button>
+                    <button 
+                      onClick={() => handleDeletePlaylist(selectedPlaylist.playlist._id)}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        padding: '10px',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      className="btn-hover"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Playlist Songs list */}
+                <div style={{ marginBottom: '40px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Songs List</h3>
+                  {selectedPlaylist.songs.length === 0 ? (
+                    <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '32px', textAlign: 'center', opacity: 0.5 }}>
+                      No songs in this playlist. Search and add some below!
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {selectedPlaylist.songs.map((song: any, index: number) => {
+                        const isCurrentPlayingSong = currentSong._id === song._id && queueName === selectedPlaylist.playlist.title;
+                        return (
+                          <div 
+                            key={song._id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              background: 'rgba(255,255,255,0.01)',
+                              border: '1px solid rgba(255,255,255,0.03)',
+                              borderRadius: '14px',
+                              padding: '12px 16px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#333', overflow: 'hidden' }}>
+                                <img src={song.image || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop'} alt="Song" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: isCurrentPlayingSong ? '#12d15e' : '#fff' }}>
+                                  {song.title}
+                                </div>
+                                <div style={{ fontSize: '12px', opacity: 0.5 }}>{song.artistName}</div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <button 
+                                onClick={() => handlePlaySongFromPlaylist(selectedPlaylist.songs, selectedPlaylist.playlist.title, index)}
+                                style={{
+                                  background: isCurrentPlayingSong ? 'rgba(18, 209, 94, 0.1)' : 'rgba(255,255,255,0.05)',
+                                  border: 'none',
+                                  color: isCurrentPlayingSong ? '#12d15e' : '#fff',
+                                  padding: '8px 14px',
+                                  borderRadius: '8px',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer'
+                                }}
+                                className="btn-hover"
+                              >
+                                {isCurrentPlayingSong && isPlaying ? 'Playing' : 'Play'}
+                              </button>
+                              <button 
+                                onClick={() => handleRemoveSongFromPlaylist(song._id)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'rgba(255,255,255,0.4)',
+                                  cursor: 'pointer',
+                                  padding: '8px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.4)'}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Add Songs Search */}
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '32px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px' }}>Add Songs to Playlist</h3>
+                  
+                  <div style={{ position: 'relative', marginBottom: '20px' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '16px', top: '16px', opacity: 0.4 }} />
+                    <input 
+                      type="text" 
+                      placeholder="Search songs by title or artist..." 
+                      value={playlistSearchQuery}
+                      onChange={(e) => setPlaylistSearchQuery(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '14px 16px 14px 44px',
+                        borderRadius: '14px',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'rgba(255,255,255,0.02)',
+                        color: '#fff',
+                        fontSize: '14px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {filteredSongs.slice(0, 5).map((song) => {
+                      const isAlreadyIn = selectedPlaylist.songs.some((s: any) => s._id === song._id);
+                      return (
+                        <div 
+                          key={song._id} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between', 
+                            background: 'rgba(255,255,255,0.01)', 
+                            border: '1px solid rgba(255,255,255,0.03)', 
+                            borderRadius: '12px', 
+                            padding: '10px 14px' 
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#333', overflow: 'hidden' }}>
+                              <img src={song.image || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop'} alt="Song" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 'bold' }}>{song.title}</div>
+                              <div style={{ fontSize: '11px', opacity: 0.5 }}>{song.artistName}</div>
+                            </div>
+                          </div>
+
+                          <button 
+                            disabled={isAlreadyIn}
+                            onClick={() => handleAddSongToPlaylist(song._id)}
+                            style={{
+                              background: isAlreadyIn ? 'rgba(255,255,255,0.05)' : 'rgba(18, 209, 94, 0.1)',
+                              border: 'none',
+                              color: isAlreadyIn ? 'rgba(255,255,255,0.3)' : '#12d15e',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              fontSize: '11px',
+                              fontWeight: 'bold',
+                              cursor: isAlreadyIn ? 'not-allowed' : 'pointer'
+                            }}
+                            className="btn-hover"
+                          >
+                            {isAlreadyIn ? 'Added' : 'Add'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ height: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.4, textAlign: 'center' }}>
+                <ListMusic size={40} style={{ marginBottom: '16px' }} />
+                <h4 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 6px 0' }}>No Playlist Selected</h4>
+                <p style={{ fontSize: '13px', maxWidth: '280px' }}>Select a playlist from the left panel to manage its songs and play them, or create a new playlist.</p>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0f0f0f', color: '#fff' }}>
@@ -646,7 +1139,7 @@ const DashboardPage = () => {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <NavItem icon={<Home size={20} />} label="Home" active={activeTab === 'home'} onClick={() => { setActiveTab('home'); setIsMobileOpen(false); }} collapsed={isSidebarCollapsed} />
           <NavItem icon={<BookOpen size={20} />} label="Lessons" onClick={() => navigate('/lessons')} collapsed={isSidebarCollapsed} />
-          <NavItem icon={<Music size={20} />} label="Library" collapsed={isSidebarCollapsed} />
+          <NavItem icon={<Music size={20} />} label="Library" active={activeTab === 'library'} onClick={() => { setActiveTab('library'); setIsMobileOpen(false); }} collapsed={isSidebarCollapsed} />
           <NavItem icon={<BarChart2 size={20} />} label="Statistics" active={activeTab === 'statistics'} onClick={() => { setActiveTab('statistics'); setIsMobileOpen(false); }} collapsed={isSidebarCollapsed} />
         </nav>
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '24px' }}>
@@ -657,7 +1150,7 @@ const DashboardPage = () => {
 
       {/* Main Content */}
       <main className="main-content" style={{ flex: 1, marginLeft: 'var(--sidebar-width, 0px)', padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-        {activeTab === 'statistics' ? renderStatistics() : (
+        {activeTab === 'statistics' ? renderStatistics() : activeTab === 'library' ? renderLibrary() : (
           <div style={{ width: '100%', maxWidth: '1200px' }}>
           
           <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '32px', marginBottom: '48px' }}>
@@ -1175,6 +1668,128 @@ const DashboardPage = () => {
             ) : (
               <div style={{ padding: '40px 0', textAlign: 'center', opacity: 0.6 }}>No details found.</div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Playlist Modal */}
+      {showCreateModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '20px',
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1e1e30 0%, #0c0c14 100%)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '28px',
+            padding: '40px',
+            maxWidth: '450px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => { setShowCreateModal(false); setNewPlaylistTitle(''); }}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                background: 'rgba(255,255,255,0.05)',
+                border: 'none',
+                color: '#fff',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={16} />
+            </button>
+
+            <div style={{ display: 'inline-flex', background: 'rgba(18, 209, 94, 0.1)', padding: '16px', borderRadius: '50%', marginBottom: '24px', color: '#12d15e' }}>
+              <ListMusic size={32} />
+            </div>
+
+            <h2 style={{ fontSize: '24px', fontWeight: '800', marginBottom: '8px' }}>Create Playlist</h2>
+            <p style={{ opacity: 0.6, fontSize: '14px', marginBottom: '24px' }}>Give your custom playlist a name to get started.</p>
+
+            <div style={{ marginBottom: '24px' }}>
+              <input 
+                type="text" 
+                placeholder="Playlist Title" 
+                value={newPlaylistTitle}
+                onChange={(e) => setNewPlaylistTitle(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: 'rgba(255,255,255,0.02)',
+                  color: '#fff',
+                  fontSize: '15px',
+                  outline: 'none',
+                  textAlign: 'center'
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreatePlaylist();
+                }}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '14px' }}>
+              <button 
+                onClick={() => { setShowCreateModal(false); setNewPlaylistTitle(''); }}
+                style={{
+                  flex: 1,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: '#fff',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  padding: '14px',
+                  borderRadius: '16px',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleCreatePlaylist}
+                className="btn-hover"
+                style={{
+                  flex: 1,
+                  background: 'linear-gradient(135deg, #12d15e 0%, #0bb04c 100%)',
+                  color: '#000',
+                  border: 'none',
+                  padding: '14px',
+                  borderRadius: '16px',
+                  fontWeight: '800',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 10px 20px rgba(18, 209, 94, 0.15)'
+                }}
+              >
+                Create
+              </button>
+            </div>
           </div>
         </div>
       )}
