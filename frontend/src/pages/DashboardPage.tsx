@@ -51,6 +51,7 @@ const DashboardPage = () => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<any>(null);
+  const [hideVideo, setHideVideo] = useState(false);
   const navigate = useNavigate();
 
   const currentSong = songs[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, audioUrl: '', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
@@ -282,12 +283,14 @@ const DashboardPage = () => {
   const handleNext = () => {
     setCurrentSongIndex((prev) => (prev + 1) % (songs.length || 1));
     setCurrentTime(0);
+    setHideVideo(false);
     if (playerRef.current?.stopVideo) playerRef.current.stopVideo();
   };
 
   const handlePrev = () => {
     setCurrentSongIndex((prev) => (prev - 1 + (songs.length || 1)) % (songs.length || 1));
     setCurrentTime(0);
+    setHideVideo(false);
     if (playerRef.current?.stopVideo) playerRef.current.stopVideo();
   };
 
@@ -497,21 +500,52 @@ const DashboardPage = () => {
       display: 'flex'
     }}>
       {/* Mini YouTube Player Container */}
-      <div style={{ 
-        position: 'fixed', 
-        bottom: '20px', 
-        right: '20px', 
-        width: '180px', 
-        height: '100px', 
-        borderRadius: '12px',
-        overflow: 'hidden', 
-        zIndex: 1000,
-        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        background: '#000',
-        display: isPlaying ? 'block' : 'none'
-      }}>
-        <div id="youtube-player"></div>
+      <div 
+        className="mini-video-player"
+        style={{ 
+          position: 'fixed', 
+          bottom: '24px', 
+          right: '24px', 
+          width: '280px', 
+          height: '158px', 
+          borderRadius: '20px',
+          overflow: 'hidden', 
+          zIndex: 1000,
+          boxShadow: '0 20px 40px rgba(0,0,0,0.6), 0 0 20px rgba(18, 209, 94, 0.15)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          background: '#000',
+          display: isPlaying && !hideVideo ? 'block' : 'none',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        {/* Close Button overlay */}
+        <button 
+          onClick={(e) => { e.stopPropagation(); setHideVideo(true); }}
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            zIndex: 1010,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            color: '#fff',
+            borderRadius: '50%',
+            width: '28px',
+            height: '28px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            transition: 'all 0.2s ease'
+          }}
+          className="video-close-btn"
+        >
+          <X size={14} />
+        </button>
+
+        <div id="youtube-player" style={{ width: '100%', height: '100%' }}></div>
       </div>
       {/* Mobile Sidebar Hamburger Toggle */}
       <button 
@@ -850,7 +884,7 @@ const DashboardPage = () => {
                     key={song._id} 
                     song={song} 
                     active={currentSongIndex === idx} 
-                    onClick={() => { setCurrentSongIndex(idx); setCurrentTime(0); setIsPlaying(true); }} 
+                    onClick={() => { setCurrentSongIndex(idx); setCurrentTime(0); setIsPlaying(true); setHideVideo(false); }} 
                   />
                 ))}
                 {songs.length === 0 && <p style={{ opacity: 0.4 }}>No songs in the library yet.</p>}
@@ -1179,6 +1213,15 @@ const DashboardPage = () => {
         .control-icon { transition: all 0.2s; }
         .loader { font-size: 24px; font-weight: 800; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+        .mini-video-player:hover {
+          transform: translateY(-4px) scale(1.02);
+          box-shadow: 0 25px 50px rgba(0,0,0,0.7), 0 0 25px rgba(18, 209, 94, 0.25) !important;
+        }
+        .video-close-btn:hover {
+          background: #ef4444 !important;
+          border-color: #ef4444 !important;
+          transform: scale(1.1);
+        }
       `}</style>
     </div>
   );
