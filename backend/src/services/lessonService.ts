@@ -74,16 +74,56 @@ function getRandomDifficulty(): string {
   return extras[Math.floor(Math.random() * extras.length)];
 }
 
-export const generateLesson = async (language: 'hindi' | 'spanish', pastLessonsCount: number = 0) => {
+export const generateLesson = async (
+  language: 'hindi' | 'spanish',
+  levelOrCount: 'easy' | 'intermediate' | 'hard' | number = 'easy',
+  previousWords: string[] = [],
+  quizAttemptCount: number = 0
+) => {
   const randomSeed = Math.floor(Math.random() * 100000);
   const randomTopics = getRandomTopics(language);
-  const randomDifficulty = getRandomDifficulty();
 
-  // Keep dynamic difficulty logic
-  let level = "beginner";
-  if (pastLessonsCount >= 10) level = "advanced and native-like";
-  else if (pastLessonsCount >= 5) level = "upper-intermediate";
-  else if (pastLessonsCount >= 2) level = "intermediate";
+  let levelStr = "easy";
+  if (typeof levelOrCount === 'number') {
+    if (levelOrCount >= 10) levelStr = "hard";
+    else if (levelOrCount >= 5) levelStr = "intermediate";
+    else levelStr = "easy";
+  } else {
+    levelStr = levelOrCount;
+  }
+
+  // Progressive difficulty description based on how many quizzes user has done at this level
+  let levelDescription = "";
+  if (levelStr === 'easy') {
+    if (quizAttemptCount === 0) {
+      levelDescription = "Easy level — ATTEMPT 1 (Complete beginner A1: basic greetings, numbers 1-10, colors, family words. Very short simple words only. No sentences yet.)";
+    } else if (quizAttemptCount === 1) {
+      levelDescription = "Easy level — ATTEMPT 2 (A1 progressing: common nouns, simple phrases like 'I am hungry', basic verbs eat/drink/sleep/go. Still simple but slightly more vocabulary.)";
+    } else {
+      levelDescription = "Easy level — ATTEMPT 3+ (A1 consolidation: mix of greetings, basic phrases, common verbs and adjectives. User is now comfortable with basics, push slightly harder vocabulary within A1 range.)";
+    }
+  } else if (levelStr === 'intermediate') {
+    if (quizAttemptCount === 0) {
+      levelDescription = "Intermediate level — ATTEMPT 1 (B1: compound sentences, conjugated verbs, adjectives in context, daily shopping phrases, question formation like 'Where is the...?')";
+    } else if (quizAttemptCount === 1) {
+      levelDescription = "Intermediate level — ATTEMPT 2 (B1/B2: more complex sentence structures, past tense, negation patterns, conversational phrases used in daily life.)";
+    } else {
+      levelDescription = "Intermediate level — ATTEMPT 3+ (B2: challenging vocabulary, nuanced meanings, idiomatic daily expressions, fill-in-the-blank with complex sentences.)";
+    }
+  } else {
+    if (quizAttemptCount === 0) {
+      levelDescription = "Hard level — QUIZ 1 of 3 (C1: advanced idiomatic expressions, complex emotions, native-level phrases from music/literature, subtle word choice differences.)";
+    } else if (quizAttemptCount === 1) {
+      levelDescription = "Hard level — QUIZ 2 of 3 (C1/C2: more challenging idioms, compound complex sentence fills, advanced verb forms, culturally rich expressions.)";
+    } else {
+      levelDescription = "Hard level — QUIZ 3 of 3 — FINAL (C2/Native: the hardest vocabulary and phrases, advanced nuance, proverbs, and expressions. This is the mastery test.)";
+    }
+  }
+
+  // Build the exclusion block
+  const exclusionBlock = previousWords.length > 0
+    ? `\nCRITICAL — BANNED WORDS (user has already seen these — NEVER use them as targetWord or in options):\n${previousWords.slice(-60).join(', ')}\n`
+    : '';
 
   const prompt = `
 You are a language tutor for Lingofy, a music-based language 
@@ -92,9 +132,9 @@ ${language} vocabulary and phrases.
 
 Session ID (guarantees unique questions): ${randomSeed}
 Language being taught: ${language}
-Student level: ${level}
+Student level: ${levelDescription}
 Focus categories for this session: ${randomTopics}
-
+${exclusionBlock}
 ABSOLUTE RULES — READ CAREFULLY:
 
 1. ALL questionText must be written in ENGLISH ONLY
@@ -141,7 +181,7 @@ ABSOLUTE RULES — READ CAREFULLY:
    Colors & Descriptions, Places & Directions,
    Daily Verbs, Shopping, Emotions, Music & Feelings
 
-5. Each question must test a DIFFERENT word — no repeats
+5. Each question must test a DIFFERENT word — no repeats within this quiz
 
 6. For Hindi questions:
    - Use Devanagari script for Hindi words in options/answers
@@ -153,7 +193,7 @@ ABSOLUTE RULES — READ CAREFULLY:
    - Keep vocabulary conversational and natural
 
 8. Make questions EDUCATIONAL and PROGRESSIVE:
-   - Mix easy and slightly harder vocabulary
+   - Match the difficulty level description above exactly
    - Each question should genuinely teach something useful
    - Think: "Would a Duolingo lesson include this?" 
      If yes → include. If no → reject.

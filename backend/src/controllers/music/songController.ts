@@ -75,18 +75,41 @@ export const getSongs = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+const getLanguageCode = (lang: string): string => {
+  const mapping: { [key: string]: string } = {
+    english: "en",
+    korean: "ko",
+    spanish: "es",
+    french: "fr",
+    hindi: "hi",
+    japanese: "ja",
+    german: "de",
+    italian: "it"
+  };
+  return mapping[lang.toLowerCase()] || "auto";
+};
+
 export const autoTranslate = async (req: Request, res: Response): Promise<void> => {
   try {
     const { songId } = req.params;
+    const song = await Song.findById(songId);
+    if (!song) {
+      res.status(404).json({ message: "Song not found" });
+      return;
+    }
+
     const segments = await LyricSegment.find({ songId }).sort({ segmentOrder: 1 });
 
+    const english: any[] = [];
     const hindi: any[] = [];
     const spanish: any[] = [];
+
+    const sourceLangCode = getLanguageCode(song.language);
 
     // Use a more reliable public Google Translate endpoint
     const translateText = async (text: string, target: string) => {
       try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${target}&dt=t&q=${encodeURI(text)}`;
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLangCode}&tl=${target}&dt=t&q=${encodeURI(text)}`;
         const res = await axios.get(url);
         // Google Translate returns an array structure: [[["translated", "original", ...]]]
         return res.data[0][0][0];
@@ -96,12 +119,14 @@ export const autoTranslate = async (req: Request, res: Response): Promise<void> 
       }
     };
 
-    console.log(`Starting translation for song ${songId}...`);
+    console.log(`Starting translation for song ${songId} (source language: ${song.language})...`);
 
     for (let seg of segments) {
-      const hiText = await translateText(seg.text, "hi");
-      const esText = await translateText(seg.text, "es");
+      const enText = sourceLangCode === "en" ? seg.text : await translateText(seg.text, "en");
+      const hiText = sourceLangCode === "hi" ? seg.text : await translateText(seg.text, "hi");
+      const esText = sourceLangCode === "es" ? seg.text : await translateText(seg.text, "es");
 
+      english.push({ order: seg.segmentOrder, text: enText });
       hindi.push({ order: seg.segmentOrder, text: hiText });
       spanish.push({ order: seg.segmentOrder, text: esText });
     }
@@ -109,13 +134,14 @@ export const autoTranslate = async (req: Request, res: Response): Promise<void> 
     // Save translations to the Song document
     await Song.findByIdAndUpdate(songId, {
       translations: {
+        english,
         hindi,
         spanish
       }
     });
 
     console.log(`Translation complete for song ${songId}`);
-    res.json({ hindi, spanish });
+    res.json({ english, hindi, spanish });
   } catch (error: any) {
     console.error("AutoTranslate Overall Error:", error);
     res.status(500).json({ message: error.message });

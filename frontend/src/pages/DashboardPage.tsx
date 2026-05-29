@@ -22,7 +22,7 @@ import {
   Plus,
   Trash2
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const SONGS_DATA = [
   { id: 1, title: 'STRUCT', artist: 'UdieNnx', duration: 234, image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' },
@@ -39,7 +39,9 @@ const DashboardPage = () => {
   const [currentTime, setCurrentTime] = useState(0);
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [currentLang, setCurrentLang] = useState('en');
+  const [translationLang, setTranslationLang] = useState<'none' | 'en' | 'hi' | 'es'>('en');
+  const [roadmapProgress, setRoadmapProgress] = useState<any>(null);
+  const [activeCardLanguage, setActiveCardLanguage] = useState<'hindi' | 'spanish'>('spanish');
   const [segments, setSegments] = useState<any[]>([]);
   const [ytReady, setYtReady] = useState(false);
   const [syncOffset, setSyncOffset] = useState(0); // Manual sync adjustment
@@ -56,6 +58,11 @@ const DashboardPage = () => {
   const [activeTooltip, setActiveTooltip] = useState<any>(null);
   const [hideVideo, setHideVideo] = useState(false);
 
+  const learningLanguageKey = useMemo(() => {
+    const lang = preferences?.languagesToLearn?.[0]?.toLowerCase() || 'spanish';
+    return lang.includes('hindi') ? 'hindi' : 'spanish';
+  }, [preferences]);
+
   // Playlists & Queue States
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(false);
@@ -68,6 +75,7 @@ const DashboardPage = () => {
   const [queueName, setQueueName] = useState('Song Library');
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   const currentSong = currentQueue[currentSongIndex] || { title: 'No Songs', artist: 'Add some songs in admin', durationSeconds: 0, audioUrl: '', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop' };
 
@@ -105,10 +113,33 @@ const DashboardPage = () => {
           setSongs(data);
           setCurrentQueue(data);
         }
+
+        // Fetch Roadmap Progress
+        const progRes = await fetch('http://localhost:5000/api/lessons/progress', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (progRes.ok) {
+          const data = await progRes.json();
+          setRoadmapProgress(data);
+        }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchData();
   }, [navigate]);
+
+  useEffect(() => {
+    if (learningLanguageKey) {
+      setActiveCardLanguage(learningLanguageKey);
+    }
+  }, [learningLanguageKey]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabParam = params.get('tab') as 'home' | 'statistics' | 'library';
+    if (tabParam && ['home', 'statistics', 'library'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [location.search]);
 
   const fetchHistory = async () => {
     setHistoryLoading(true);
@@ -187,6 +218,14 @@ const DashboardPage = () => {
   useEffect(() => {
     if (currentSong?._id) {
       setSyncOffset(0); // Reset sync for new song
+      
+      const songLang = currentSong.language?.toLowerCase() || '';
+      if (songLang !== 'english' && songLang !== '') {
+        setTranslationLang('en');
+      } else {
+        setTranslationLang('hi');
+      }
+
       const fetchSegments = async () => {
         try {
           const token = localStorage.getItem('token');
@@ -1153,204 +1192,444 @@ const DashboardPage = () => {
         {activeTab === 'statistics' ? renderStatistics() : activeTab === 'library' ? renderLibrary() : (
           <div style={{ width: '100%', maxWidth: '1200px' }}>
           
-          <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '32px', marginBottom: '48px' }}>
-            
-            {/* Language Card */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '24px', padding: '32px', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                  <div style={{ width: '64px', height: '64px', borderRadius: '50%', border: '4px solid #fff', overflow: 'hidden' }}>
-                    <img src={`https://flagcdn.com/w160/${preferences?.languagesToLearn?.[0]?.toLowerCase() === 'korean' ? 'kr' : 'jp'}.png`} alt="Lang" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                  <div>
-                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{preferences?.languagesToLearn?.[0] || 'Learning'}</h2>
-                    <p style={{ opacity: 0.6, margin: '4px 0 0 0' }}>{preferences?.vocabularyLevel || 'Beginner'} • Level 12</p>
-                  </div>
-                </div>
-                <div style={{ background: '#12d15e', color: '#000', padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: 'bold' }}>N3</div>
-              </div>
-              
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
-                  <span>Today's Lesson Progress</span>
-                  <span>65%</span>
-                </div>
-                <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ width: '65%', height: '100%', background: '#12d15e' }}></div>
-                </div>
-              </div>
-              
-              <button className="btn-hover" style={{ 
-                width: '100%', background: '#12d15e', color: '#000', border: 'none', padding: '16px', borderRadius: '16px', 
-                fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer'
-              }}>
-                Start Daily Lesson <ChevronRight size={18} />
-              </button>
-            </div>
-
-            {/* Dynamic Music Player Card */}
-            <div style={{ 
-              background: 'linear-gradient(135deg, #1e1e1e 0%, #000 100%)', borderRadius: '24px', padding: '32px',
-              border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
+          <div className="dashboard-layout-custom" style={{ 
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '32px',
+            width: '100%',
+            marginBottom: '48px'
+          }}>
+            {/* Top Row: Language Card & Music Player Card side-by-side */}
+            <div className="top-dashboard-grid" style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', 
+              gap: '32px',
+              alignItems: 'stretch'
             }}>
-              <div style={{ display: 'flex', gap: '20px', marginBottom: '24px' }}>
-                <div style={{ width: '100px', height: '100px', borderRadius: '16px', background: '#333', overflow: 'hidden', boxShadow: isPlaying ? '0 0 20px rgba(18, 209, 94, 0.3)' : 'none', transition: 'all 0.5s' }}>
-                  <img src={currentSong.image || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop'} alt="Album" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: isPlaying ? 'scale(1.05)' : 'scale(1)', transition: 'all 0.5s' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 4px 0' }}>{currentSong.title}</h3>
-                  <p style={{ opacity: 0.6, margin: '0 0 12px 0' }}>{currentSong.artistName || currentSong.artist}</p>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
-                     <div style={{ background: 'rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>HQ AUDIO</div>
-                     <div style={{ background: 'rgba(18, 209, 94, 0.2)', color: '#12d15e', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>LYRICS</div>
-                     {currentSong?._id && (
-                       <button 
-                         onClick={() => {
-                           setModalMode('practice');
-                           setShowQuizModal(true);
-                         }}
-                         className="btn-hover"
-                         style={{ 
-                           background: 'rgba(18, 209, 94, 0.1)', 
-                           color: '#12d15e', 
-                           border: '1px solid rgba(18, 209, 94, 0.3)', 
-                           padding: '4px 10px', 
-                           borderRadius: '6px', 
-                           fontSize: '11px', 
-                           fontWeight: 'bold', 
-                           cursor: 'pointer', 
-                           display: 'flex', 
-                           alignItems: 'center', 
-                           gap: '4px',
-                           transition: 'all 0.2s',
-                           marginLeft: 'auto'
-                         }}
-                       >
-                         <BookOpen size={12} /> Practice Song
-                       </button>
-                     )}
-                  </div>
-                </div>
-              </div>
+              {/* Language Card */}
+              {(() => {
+                const progressObj = roadmapProgress?.[activeCardLanguage] || { easyCompleted: 0, intermediateCompleted: 0, hardCompleted: 0, currentStage: 'easy', badges: [] };
+                const totalCompleted = progressObj.easyCompleted + progressObj.intermediateCompleted + progressObj.hardCompleted;
+                const progressPercent = Math.round((totalCompleted / 5) * 100);
+                
+                const isEasyPassed = progressObj.easyCompleted >= 1;
+                const isInterPassed = progressObj.intermediateCompleted >= 1;
+                const isHardPassed = progressObj.hardCompleted >= 3;
 
-                <div style={{ marginBottom: '24px' }}>
-                  <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', marginBottom: '8px', position: 'relative' }}>
-                    <div style={{ width: `${(currentTime / (currentSong.durationSeconds || 180)) * 100}%`, height: '100%', background: '#12d15e', transition: 'width 0.2s linear' }}></div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', opacity: 0.5 }}>
-                    <span>{formatTime(currentTime)}</span>
-                    <span>-{formatTime((currentSong.durationSeconds || 180) - currentTime)}</span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px', marginBottom: '16px' }}>
-                  <SkipBack size={24} onClick={handlePrev} style={{ cursor: 'pointer' }} className="control-icon" />
-                  <button 
-                    onClick={handlePlayPause}
-                    style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
-                    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
-                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                  >
-                    {isPlaying ? <Pause size={28} fill="#000" color="#000" /> : <Play size={28} fill="#000" color="#000" style={{ marginLeft: '4px' }} />}
-                  </button>
-                  <SkipForward size={24} onClick={handleNext} style={{ cursor: 'pointer' }} className="control-icon" />
-                </div>
-
-                {/* Manual Sync Adjustment */}
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginBottom: '32px', opacity: 0.8 }}>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', opacity: 0.5 }}>SYNC:</span>
-                  <button onClick={() => setSyncOffset(prev => prev - 1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>-1s</button>
-                  <span style={{ color: '#12d15e', fontWeight: 'bold', fontSize: '11px', minWidth: '25px', textAlign: 'center' }}>{syncOffset > 0 ? `+${syncOffset}` : syncOffset}s</span>
-                  <button onClick={() => setSyncOffset(prev => prev + 1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>+1s</button>
-                </div>
-
-                {/* Lyrics Language Toggle */}
-                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '6px', borderRadius: '14px', gap: '4px' }}>
-                  <button 
-                    onClick={() => setCurrentLang('en')}
-                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: currentLang === 'en' ? '#fff' : 'transparent', color: currentLang === 'en' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: '0.2s' }}
-                  >English</button>
-                  <button 
-                    onClick={() => setCurrentLang('hi')}
-                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: currentLang === 'hi' ? '#fff' : 'transparent', color: currentLang === 'hi' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: '0.2s' }}
-                  >Hindi</button>
-                  <button 
-                    onClick={() => setCurrentLang('es')}
-                    style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: currentLang === 'es' ? '#fff' : 'transparent', color: currentLang === 'es' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: '0.2s' }}
-                  >Spanish</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Lyrics Section */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '24px', padding: '32px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
-                <Globe size={20} color="#12d15e" />
-                <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Interactive Lyrics</h3>
-              </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', maxHeight: '400px', paddingRight: '10px' }}>
-                {currentLang === 'en' ? (
-                  segments.length > 0 ? (
-                    segments.map((line: any, idx: number) => (
-                      <p 
-                        id={`line-${idx}`}
-                        key={idx} 
-                        style={{ 
-                          fontSize: '22px', 
-                          fontWeight: '600', 
-                          opacity: idx === activeIndex ? 1 : 0.3, 
-                          lineHeight: '1.6',
-                          color: idx === activeIndex ? '#12d15e' : '#fff',
-                          transition: 'all 0.3s',
-                          transform: idx === activeIndex ? 'scale(1.05)' : 'scale(1)',
-                          transformOrigin: 'left'
-                        }}
-                      >
-                        {line.text}
-                      </p>
-                    ))
-                  ) : (
-                    <div style={{ opacity: 0.4, textAlign: 'center', marginTop: '40px' }}>
-                      <Music size={40} style={{ marginBottom: '16px' }} />
-                      <p>English Lyrics will appear here when synced.</p>
+                return (
+                  <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '24px', padding: '28px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Language Selector Dropdown */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '11px', opacity: 0.4, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Learning Language</label>
+                      <div style={{ position: 'relative' }}>
+                        <select 
+                          value={activeCardLanguage}
+                          onChange={(e: any) => setActiveCardLanguage(e.target.value as 'hindi' | 'spanish')}
+                          style={{
+                            width: '100%',
+                            padding: '12px 16px',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(255,255,255,0.05)',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            MozAppearance: 'none'
+                          }}
+                        >
+                          <option value="spanish" style={{ background: '#1a1a1a', color: '#fff' }}>🇪🇸 Spanish</option>
+                          <option value="hindi" style={{ background: '#1a1a1a', color: '#fff' }}>🇮🇳 Hindi</option>
+                        </select>
+                        <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.6, fontSize: '10px' }}>
+                          ▼
+                        </div>
+                      </div>
                     </div>
-                  )
-                ) : (
-                  // Fallback: If no translation exists, show English but faded
-                  currentSong?.translations?.[currentLang === 'hi' ? 'hindi' : 'spanish']?.length > 0 ? (
-                    currentSong.translations[currentLang === 'hi' ? 'hindi' : 'spanish'].map((line: any, idx: number) => (
-                      <p 
-                        id={`line-${idx}`}
-                        key={idx} 
+
+                    {/* Flag & Title Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', border: '2px solid #fff', overflow: 'hidden', boxShadow: '0 0 10px rgba(255,255,255,0.1)' }}>
+                          <img src={`https://flagcdn.com/w160/${activeCardLanguage === 'hindi' ? 'in' : 'es'}.png`} alt="Lang Flag" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                        <div>
+                          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, textTransform: 'capitalize' }}>{activeCardLanguage}</h2>
+                          <p style={{ opacity: 0.5, margin: '2px 0 0 0', fontSize: '12px' }}>
+                            {progressObj.currentStage === 'completed' ? 'Language Star 👑' : `${progressObj.currentStage.charAt(0).toUpperCase() + progressObj.currentStage.slice(1)} Level`}
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ background: '#12d15e', color: '#000', padding: '4px 10px', borderRadius: '100px', fontSize: '11px', fontWeight: 'bold' }}>
+                        {activeCardLanguage === 'hindi' ? 'N3' : 'A2'}
+                      </div>
+                    </div>
+
+                    {/* Visual Roadmap Steps */}
+                    <div style={{ padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <div style={{ fontSize: '11px', opacity: 0.4, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px', letterSpacing: '0.5px' }}>Roadmap Stages</div>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', padding: '0 10px' }}>
+                        {/* Connector Line behind steps */}
+                        <div style={{ position: 'absolute', top: '15px', left: '20px', right: '20px', height: '2px', background: 'rgba(255,255,255,0.08)', zIndex: 1 }}>
+                          <div style={{ width: `${(totalCompleted / 5) * 100}%`, height: '100%', background: '#12d15e', transition: 'width 0.5s ease' }}></div>
+                        </div>
+
+                        {/* Step 1: Easy */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2, gap: '4px' }}>
+                          <div style={{ 
+                            width: '30px', height: '30px', borderRadius: '50%', 
+                            background: isEasyPassed ? '#12d15e' : (progressObj.currentStage === 'easy' ? '#1e1e1e' : 'rgba(255,255,255,0.05)'), 
+                            border: `2px solid ${isEasyPassed || progressObj.currentStage === 'easy' ? '#12d15e' : 'rgba(255,255,255,0.1)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold',
+                            color: isEasyPassed ? '#000' : '#fff', boxShadow: progressObj.currentStage === 'easy' ? '0 0 10px rgba(18,209,94,0.4)' : 'none'
+                          }}>
+                            {isEasyPassed ? '✓' : 'E'}
+                          </div>
+                          <span style={{ fontSize: '10px', opacity: progressObj.currentStage === 'easy' ? 1 : 0.5, fontWeight: progressObj.currentStage === 'easy' ? 'bold' : 'normal' }}>Easy</span>
+                        </div>
+
+                        {/* Step 2: Intermediate */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2, gap: '4px' }}>
+                          <div style={{ 
+                            width: '30px', height: '30px', borderRadius: '50%', 
+                            background: isInterPassed ? '#12d15e' : (progressObj.currentStage === 'intermediate' ? '#1e1e1e' : 'rgba(255,255,255,0.05)'), 
+                            border: `2px solid ${isInterPassed || progressObj.currentStage === 'intermediate' ? '#12d15e' : 'rgba(255,255,255,0.1)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold',
+                            color: isInterPassed ? '#000' : '#fff', boxShadow: progressObj.currentStage === 'intermediate' ? '0 0 10px rgba(18,209,94,0.4)' : 'none'
+                          }}>
+                            {isInterPassed ? '✓' : 'I'}
+                          </div>
+                          <span style={{ fontSize: '10px', opacity: progressObj.currentStage === 'intermediate' ? 1 : 0.5, fontWeight: progressObj.currentStage === 'intermediate' ? 'bold' : 'normal' }}>Inter</span>
+                        </div>
+
+                        {/* Step 3: Hard */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2, gap: '4px' }}>
+                          <div style={{ 
+                            width: '30px', height: '30px', borderRadius: '50%', 
+                            background: isHardPassed ? '#12d15e' : (progressObj.currentStage === 'hard' ? '#1e1e1e' : 'rgba(255,255,255,0.05)'), 
+                            border: `2px solid ${isHardPassed || progressObj.currentStage === 'hard' ? '#12d15e' : 'rgba(255,255,255,0.1)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold',
+                            color: isHardPassed ? '#000' : '#fff', boxShadow: progressObj.currentStage === 'hard' ? '0 0 10px rgba(18,209,94,0.4)' : 'none'
+                          }}>
+                            {isHardPassed ? '✓' : `${progressObj.hardCompleted}/3`}
+                          </div>
+                          <span style={{ fontSize: '10px', opacity: progressObj.currentStage === 'hard' ? 1 : 0.5, fontWeight: progressObj.currentStage === 'hard' ? 'bold' : 'normal' }}>Hard</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Badges Earned Section */}
+                    <div>
+                      <div style={{ fontSize: '11px', opacity: 0.4, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Unlocked Badges</div>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <div 
+                          className="badge-wrapper"
+                          style={{ 
+                            background: isEasyPassed ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.01)', 
+                            border: `1px solid ${isEasyPassed ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)'}`,
+                            borderRadius: '12px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px', flex: 1,
+                            opacity: isEasyPassed ? 1 : 0.25, transition: 'all 0.3s ease'
+                          }}
+                        >
+                          <span style={{ fontSize: '20px', filter: isEasyPassed ? 'drop-shadow(0 0 4px rgba(255,255,255,0.5))' : 'none' }}>🎖️</span>
+                          <div style={{ fontSize: '10px', fontWeight: 'bold', lineHeight: '1.2' }}>Easy Explorer</div>
+                        </div>
+
+                        <div 
+                          className="badge-wrapper"
+                          style={{ 
+                            background: isInterPassed ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.01)', 
+                            border: `1px solid ${isInterPassed ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)'}`,
+                            borderRadius: '12px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px', flex: 1,
+                            opacity: isInterPassed ? 1 : 0.25, transition: 'all 0.3s ease'
+                          }}
+                        >
+                          <span style={{ fontSize: '20px', filter: isInterPassed ? 'drop-shadow(0 0 4px rgba(255,255,255,0.5))' : 'none' }}>🏆</span>
+                          <div style={{ fontSize: '10px', fontWeight: 'bold', lineHeight: '1.2' }}>Inter Scholar</div>
+                        </div>
+
+                        <div 
+                          className="badge-wrapper"
+                          style={{ 
+                            background: isHardPassed ? 'rgba(234,179,8,0.08)' : 'rgba(255,255,255,0.01)', 
+                            border: `1px solid ${isHardPassed ? 'rgba(234,179,8,0.2)' : 'rgba(255,255,255,0.02)'}`,
+                            borderRadius: '12px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px', flex: 1,
+                            opacity: isHardPassed ? 1 : 0.25, transition: 'all 0.3s ease'
+                          }}
+                        >
+                          <span style={{ fontSize: '20px', filter: isHardPassed ? 'drop-shadow(0 0 6px rgba(234,179,8,0.6))' : 'none' }}>⭐</span>
+                          <div style={{ fontSize: '10px', fontWeight: 'bold', lineHeight: '1.2', color: isHardPassed ? '#facc15' : '#fff' }}>Lang Star</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar & CTA Button */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px', opacity: 0.7 }}>
+                        <span>Roadmap Progress</span>
+                        <span>{progressPercent}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', marginBottom: '16px' }}>
+                        <div style={{ width: `${progressPercent}%`, height: '100%', background: '#12d15e', transition: 'width 0.5s ease' }}></div>
+                      </div>
+
+                      <button 
+                        onClick={() => {
+                          const levelToUse = progressObj.currentStage === 'completed' ? 'hard' : progressObj.currentStage;
+                          navigate(`/lessons?language=${activeCardLanguage}&level=${levelToUse}`);
+                        }}
+                        className="btn-hover"
                         style={{ 
-                          fontSize: '22px', 
-                          fontWeight: '600', 
-                          opacity: idx === activeIndex ? 1 : 0.3, 
-                          lineHeight: '1.6', 
-                          color: idx === activeIndex ? '#12d15e' : '#fff',
-                          transition: 'all 0.3s',
-                          transform: idx === activeIndex ? 'scale(1.05)' : 'scale(1)',
-                          transformOrigin: 'left'
+                          width: '100%', background: '#12d15e', color: '#000', border: 'none', padding: '14px', borderRadius: '14px', 
+                          fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer',
+                          fontSize: '14px', boxShadow: '0 4px 12px rgba(18,209,94,0.15)'
                         }}
                       >
-                        {line.text}
-                      </p>
-                    ))
-                  ) : (
-                    <div style={{ opacity: 0.4, textAlign: 'center', marginTop: '40px' }}>
-                      <Globe size={40} style={{ marginBottom: '16px' }} />
-                      <p>No {currentLang === 'hi' ? 'Hindi' : 'Spanish'} translations found for this song.</p>
-                      <button 
-                        onClick={() => setCurrentLang('en')}
-                        style={{ background: '#12d15e', border: 'none', padding: '8px 16px', borderRadius: '20px', marginTop: '16px', fontWeight: 'bold', cursor: 'pointer' }}
-                      >
-                        Read in English
+                        {progressObj.currentStage === 'completed' 
+                          ? 'Practice Advanced Lessons'
+                          : `Take ${progressObj.currentStage.charAt(0).toUpperCase() + progressObj.currentStage.slice(1)} Quiz`
+                        } <ChevronRight size={16} />
                       </button>
                     </div>
-                  )
+                  </div>
+                );
+              })()}
+
+              {/* Dynamic Music Player Card */}
+              <div style={{ 
+                background: 'linear-gradient(135deg, #1e1e1e 0%, #000 100%)', borderRadius: '24px', padding: '32px',
+                border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '24px' }}>
+                  <div style={{ width: '100px', height: '100px', borderRadius: '16px', background: '#333', overflow: 'hidden', boxShadow: isPlaying ? '0 0 20px rgba(18, 209, 94, 0.3)' : 'none', transition: 'all 0.5s', flexShrink: 0 }}>
+                    <img src={currentSong.image || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop'} alt="Album" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: isPlaying ? 'scale(1.05)' : 'scale(1)', transition: 'all 0.5s' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentSong.title}</h3>
+                    <p style={{ opacity: 0.6, margin: '0 0 12px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentSong.artistName || currentSong.artist}</p>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
+                       <div style={{ background: 'rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>HQ AUDIO</div>
+                       <div style={{ background: 'rgba(18, 209, 94, 0.2)', color: '#12d15e', padding: '4px 8px', borderRadius: '4px', fontSize: '10px' }}>LYRICS</div>
+                       {currentSong?._id && (
+                         <button 
+                           onClick={() => {
+                             setModalMode('practice');
+                             setShowQuizModal(true);
+                           }}
+                           className="btn-hover"
+                           style={{ 
+                             background: 'rgba(18, 209, 94, 0.1)', 
+                             color: '#12d15e', 
+                             border: '1px solid rgba(18, 209, 94, 0.3)', 
+                             padding: '4px 10px', 
+                             borderRadius: '6px', 
+                             fontSize: '11px', 
+                             fontWeight: 'bold', 
+                             cursor: 'pointer', 
+                             display: 'flex', 
+                             alignItems: 'center', 
+                             gap: '4px',
+                             transition: 'all 0.2s',
+                             marginLeft: 'auto'
+                           }}
+                         >
+                           <BookOpen size={12} /> Practice Song
+                         </button>
+                       )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', marginBottom: '8px', position: 'relative' }}>
+                      <div style={{ width: `${(currentTime / (currentSong.durationSeconds || 180)) * 100}%`, height: '100%', background: '#12d15e', transition: 'width 0.2s linear' }}></div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', opacity: 0.5 }}>
+                      <span>{formatTime(currentTime)}</span>
+                      <span>-{formatTime((currentSong.durationSeconds || 180) - currentTime)}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px', marginBottom: '16px' }}>
+                    <SkipBack size={24} onClick={handlePrev} style={{ cursor: 'pointer' }} className="control-icon" />
+                    <button 
+                      onClick={handlePlayPause}
+                      style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform 0.2s', flexShrink: 0 }}
+                      onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
+                      onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    >
+                      {isPlaying ? <Pause size={24} fill="#000" color="#000" /> : <Play size={24} fill="#000" color="#000" style={{ marginLeft: '3px' }} />}
+                    </button>
+                    <SkipForward size={24} onClick={handleNext} style={{ cursor: 'pointer' }} className="control-icon" />
+                  </div>
+
+                  {/* Manual Sync Adjustment */}
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '24px', opacity: 0.8 }}>
+                    <span style={{ fontSize: '10px', fontWeight: 'bold', opacity: 0.5 }}>SYNC:</span>
+                    <button onClick={() => setSyncOffset(prev => prev - 1)} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', fontSize: '10px' }}>-1s</button>
+                    <span style={{ color: '#12d15e', fontWeight: 'bold', fontSize: '11px', minWidth: '25px', textAlign: 'center' }}>{syncOffset > 0 ? `+${syncOffset}` : syncOffset}s</span>
+                    <button onClick={() => setSyncOffset(prev => prev + 1)} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', fontSize: '10px' }}>+1s</button>
+                  </div>
+
+                  {/* Lyrics Language Toggle */}
+                  <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '12px', gap: '4px' }}>
+                    <button 
+                      onClick={() => setTranslationLang('none')}
+                      style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: translationLang === 'none' ? '#fff' : 'transparent', color: translationLang === 'none' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: '0.2s' }}
+                    >Original</button>
+                    
+                    {currentSong.language?.toLowerCase() !== 'english' && (
+                      <button 
+                        onClick={() => setTranslationLang('en')}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: translationLang === 'en' ? '#fff' : 'transparent', color: translationLang === 'en' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: '0.2s' }}
+                      >English 🇬🇧</button>
+                    )}
+
+                    <button 
+                      onClick={() => setTranslationLang('hi')}
+                      style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: translationLang === 'hi' ? '#fff' : 'transparent', color: translationLang === 'hi' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: '0.2s' }}
+                    >Hindi 🇮🇳</button>
+                    <button 
+                      onClick={() => setTranslationLang('es')}
+                      style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: translationLang === 'es' ? '#fff' : 'transparent', color: translationLang === 'es' ? '#000' : '#fff', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: '0.2s' }}
+                    >Spanish 🇪🇸</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Row: Immersive Interactive Lyrics */}
+            <div 
+              className="lyrics-card-custom"
+              style={{ 
+                background: 'rgba(255,255,255,0.03)', 
+                borderRadius: '24px', 
+                padding: '32px', 
+                border: '1px solid rgba(255,255,255,0.05)', 
+                display: 'flex', 
+                flexDirection: 'column',
+                height: '620px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Globe size={20} color="#12d15e" />
+                  <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Interactive Lyrics</h3>
+                </div>
+                <span style={{ fontSize: '12px', opacity: 0.5 }}>
+                  {translationLang === 'none' ? 'Original Only' : `Parallel: ${translationLang === 'en' ? 'English' : translationLang === 'hi' ? 'Hindi' : 'Spanish'}`}
+                </span>
+              </div>
+              
+              {/* Header labels for parallel columns */}
+              {translationLang !== 'none' && (
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1fr 1fr', 
+                  gap: '40px', 
+                  paddingBottom: '12px', 
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  marginBottom: '20px',
+                  opacity: 0.6,
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
+                }}>
+                  <div>Original Lyrics</div>
+                  <div>Translation ({translationLang === 'en' ? 'English' : translationLang === 'hi' ? 'Hindi' : 'Spanish'})</div>
+                </div>
+              )}
+
+              <div style={{ 
+                flex: 1, 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '24px', 
+                overflowY: 'auto', 
+                paddingRight: '12px'
+              }}>
+                {segments.length > 0 ? (
+                  segments.map((line: any, idx: number) => {
+                    let translationText = "";
+                    if (translationLang === 'en') {
+                      translationText = currentSong?.translations?.english?.[idx]?.text;
+                    } else if (translationLang === 'hi') {
+                      translationText = currentSong?.translations?.hindi?.[idx]?.text;
+                    } else if (translationLang === 'es') {
+                      translationText = currentSong?.translations?.spanish?.[idx]?.text;
+                    }
+                    const isActive = idx === activeIndex;
+
+                    return (
+                      <div 
+                        id={`line-${idx}`}
+                        key={idx} 
+                        style={{ 
+                          display: 'grid',
+                          gridTemplateColumns: translationLang === 'none' ? '1fr' : '1fr 1fr',
+                          gap: '40px',
+                          opacity: isActive ? 1 : 0.35, 
+                          transition: 'all 0.3s ease',
+                          transform: isActive ? 'scale(1.015)' : 'scale(1)',
+                          transformOrigin: 'left',
+                          padding: '4px 0'
+                        }}
+                      >
+                        {/* Original Lyric Column */}
+                        <p style={{ 
+                          fontSize: '19px', 
+                          fontWeight: '600', 
+                          lineHeight: '1.6',
+                          color: isActive ? '#12d15e' : '#ffffff',
+                          margin: 0,
+                          transition: 'color 0.3s'
+                        }}>
+                          {line.text}
+                        </p>
+
+                        {/* Translation Lyric Column */}
+                        {translationLang !== 'none' && (
+                          <p style={{ 
+                            fontSize: '19px', 
+                            fontWeight: '600', 
+                            lineHeight: '1.6',
+                            color: isActive ? '#facc15' : 'rgba(255,255,255,0.45)',
+                            margin: 0,
+                            transition: 'color 0.3s'
+                          }}>
+                            {translationText || '...'}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ opacity: 0.4, textAlign: 'center', marginTop: '60px' }}>
+                    <Music size={40} style={{ marginBottom: '16px', margin: '0 auto' }} />
+                    <p>Lyrics will appear here when synced.</p>
+                  </div>
                 )}
               </div>
             </div>
+            
+            {/* Immersive Responsive styling tag */}
+            <style>{`
+              @media (max-width: 1024px) {
+                .top-dashboard-grid {
+                  grid-template-columns: 1fr !important;
+                }
+                .lyrics-card-custom {
+                  height: 500px !important;
+                }
+              }
+            `}</style>
+          </div>
 
             {/* Bottom Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '48px' }} className="content-grid-desktop">

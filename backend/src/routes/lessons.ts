@@ -5,6 +5,7 @@ import LessonAttempt from "../models/LessonAttempt";
 import { generateLesson, generateSongLesson } from "../services/lessonService";
 import Song from "../models/music/Song";
 import LyricSegment from "../models/music/LyricSegment";
+import { adminOnly } from "../middleware/roleMiddleware";
 
 const router = express.Router();
 
@@ -17,13 +18,34 @@ router.post("/generate", protect, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "Invalid language" });
     }
 
-    // Fetch past lessons to determine dynamic difficulty
-    const pastLessonsCount = await LessonAttempt.countDocuments({
+    const activeLevel = ['easy', 'intermediate', 'hard'].includes(level) ? level : 'easy';
+
+    // Fetch user's past attempts for this language+level to extract seen words & attempt count
+    const pastAttempts = await LessonAttempt.find({
       userId: req.user._id,
-      language: language
+      language,
+      level: activeLevel
+    }).sort({ completedAt: -1 }).limit(20).select('questions');
+
+    // Extract all targetWords and correctAnswers the user has already seen
+    const previousWords: string[] = [];
+    for (const attempt of pastAttempts) {
+      for (const q of attempt.questions as any[]) {
+        if (q.targetWord) previousWords.push(q.targetWord);
+        if (q.correctAnswer) previousWords.push(q.correctAnswer);
+      }
+    }
+    // Deduplicate
+    const uniquePreviousWords = [...new Set(previousWords)];
+
+    // Count total quiz attempts at this level (for progressive difficulty)
+    const totalAttempts = await LessonAttempt.countDocuments({
+      userId: req.user._id,
+      language,
+      level: activeLevel
     });
 
-    const lessonData = await generateLesson(language, pastLessonsCount);
+    const lessonData = await generateLesson(language, activeLevel, uniquePreviousWords, totalAttempts);
     res.status(200).json(lessonData);
   } catch (error) {
     console.error("Error generating lesson:", error);
@@ -72,7 +94,7 @@ router.post("/generate-from-song", protect, async (req: AuthRequest, res: Respon
 // POST /api/lessons/submit
 router.post("/submit", protect, async (req: AuthRequest, res: Response) => {
   try {
-    const { language, questions, userAnswers } = req.body;
+    const { language, level, questions, userAnswers } = req.body;
 
     if (!language || !questions || !userAnswers) {
       return res.status(400).json({ message: "Missing required fields" });
@@ -104,11 +126,12 @@ router.post("/submit", protect, async (req: AuthRequest, res: Response) => {
     });
 
     const xpEarned = score * 10;
+    const activeLevel = ['easy', 'intermediate', 'hard'].includes(level) ? level : 'easy';
 
     const attempt = new LessonAttempt({
       userId: req.user._id,
       language,
-      level: 'dynamic',
+      level: activeLevel,
       questions,
       userAnswers: results.map((r: any) => ({
         questionId: r.questionId,
@@ -159,6 +182,98 @@ router.get("/attempt/:attemptId", protect, async (req: AuthRequest, res: Respons
   } catch (error) {
     console.error("Error fetching attempt details:", error);
     res.status(500).json({ message: "Failed to fetch attempt details." });
+  }
+});
+
+// GET /api/lessons/progress - Get user's roadmap progress and badges
+router.get("/progress", protect, async (req: AuthRequest, res: Response) => {
+  try {
+    const attempts = await LessonAttempt.find({ userId: req.user._id, score: { $gte: 5 } });
+
+    const getProgressForLang = (lang: string) => {
+      const langAttempts = attempts.filter(a => a.language === lang);
+
+      const easyCount = langAttempts.filter(a => a.level === 'easy' || a.level === 'beginner').length;
+      const intermediateCount = langAttempts.filter(a => a.level === 'intermediate').length;
+      const hardCount = langAttempts.filter(a => a.level === 'hard').length;
+
+      let currentStage = 'easy';
+      const badges: string[] = [];
+
+      if (easyCount >= 1) {
+        badges.push('easy_explorer');
+        currentStage = 'intermediate';
+      }
+      if (intermediateCount >= 1 && easyCount >= 1) {
+        badges.push('intermediate_scholar');
+        currentStage = 'hard';
+      }
+      if (hardCount >= 3 && intermediateCount >= 1 && easyCount >= 1) {
+        badges.push('language_star');
+        currentStage = 'completed';
+      }
+
+      return {
+        easyCompleted: Math.min(easyCount, 1),
+        intermediateCompleted: Math.min(intermediateCount, 1),
+        hardCompleted: Math.min(hardCount, 3),
+        currentStage,
+        badges
+      };
+    };
+
+    res.status(200).json({
+      hindi: getProgressForLang('hindi'),
+      spanish: getProgressForLang('spanish')
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/lessons/admin/progress/:userId - Get target user's progress (Admin only)
+router.get("/admin/progress/:userId", protect, adminOnly, async (req: AuthRequest, res: Response) => {
+  try {
+    const attempts = await LessonAttempt.find({ userId: req.params.userId, score: { $gte: 5 } });
+
+    const getProgressForLang = (lang: string) => {
+      const langAttempts = attempts.filter(a => a.language === lang);
+
+      const easyCount = langAttempts.filter(a => a.level === 'easy' || a.level === 'beginner').length;
+      const intermediateCount = langAttempts.filter(a => a.level === 'intermediate').length;
+      const hardCount = langAttempts.filter(a => a.level === 'hard').length;
+
+      let currentStage = 'easy';
+      const badges: string[] = [];
+
+      if (easyCount >= 1) {
+        badges.push('easy_explorer');
+        currentStage = 'intermediate';
+      }
+      if (intermediateCount >= 1 && easyCount >= 1) {
+        badges.push('intermediate_scholar');
+        currentStage = 'hard';
+      }
+      if (hardCount >= 3 && intermediateCount >= 1 && easyCount >= 1) {
+        badges.push('language_star');
+        currentStage = 'completed';
+      }
+
+      return {
+        easyCompleted: Math.min(easyCount, 1),
+        intermediateCompleted: Math.min(intermediateCount, 1),
+        hardCompleted: Math.min(hardCount, 3),
+        currentStage,
+        badges
+      };
+    };
+
+    res.status(200).json({
+      hindi: getProgressForLang('hindi'),
+      spanish: getProgressForLang('spanish')
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
   }
 });
 

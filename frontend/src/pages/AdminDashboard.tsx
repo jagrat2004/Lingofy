@@ -35,6 +35,8 @@ const AdminDashboard = () => {
   const [usersLoading, setUsersLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [selectedUserAttempts, setSelectedUserAttempts] = useState<any[]>([]);
+  const [selectedUserProgress, setSelectedUserProgress] = useState<any>(null);
+  const [progressLoading, setProgressLoading] = useState<boolean>(false);
   const [attemptsLoading, setAttemptsLoading] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -60,17 +62,24 @@ const AdminDashboard = () => {
 
   const fetchUserAttempts = async (userId: string) => {
     setAttemptsLoading(true);
+    setProgressLoading(true);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`http://localhost:5000/api/admin/users/${userId}/attempts`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       setSelectedUserAttempts(response.data);
+
+      const progResponse = await axios.get(`http://localhost:5000/api/lessons/admin/progress/${userId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setSelectedUserProgress(progResponse.data);
     } catch (err) {
       console.error(err);
       alert('Failed to fetch user quiz history');
     } finally {
       setAttemptsLoading(false);
+      setProgressLoading(false);
     }
   };
 
@@ -107,6 +116,7 @@ const AdminDashboard = () => {
       fetchUsers();
       setSelectedUser(null);
       setSelectedUserAttempts([]);
+      setSelectedUserProgress(null);
     }
   }, [activeView]);
 
@@ -266,6 +276,51 @@ const AdminDashboard = () => {
                   <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '4px' }}>{selectedUser.name}</h3>
                   <p style={{ fontSize: '12px', opacity: 0.5, margin: '2px 0 0 0' }}>{selectedUser.email}</p>
                 </div>
+
+                {/* Dynamic Roadmap Progress */}
+                {selectedUserProgress && (
+                  <div style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '16px', padding: '16px' }}>
+                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#a855f7', fontWeight: 'bold', marginBottom: '12px', letterSpacing: '0.5px' }}>Learning Milestones</div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      {/* Hindi Milestones */}
+                      <div style={{ borderRight: '1px solid rgba(255,255,255,0.05)', paddingRight: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold' }}>Hindi 🇮🇳</span>
+                          <span style={{ fontSize: '11px', color: '#a855f7', fontWeight: 'bold', textTransform: 'capitalize' }}>
+                            {selectedUserProgress.hindi.currentStage}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '18px', opacity: selectedUserProgress.hindi.badges.includes('easy_explorer') ? 1 : 0.2 }} title="Easy Explorer">🎖️</span>
+                          <span style={{ fontSize: '18px', opacity: selectedUserProgress.hindi.badges.includes('intermediate_scholar') ? 1 : 0.2 }} title="Intermediate Scholar">🏆</span>
+                          <span style={{ fontSize: '18px', opacity: selectedUserProgress.hindi.badges.includes('language_star') ? 1 : 0.2 }} title="Language Star">⭐</span>
+                        </div>
+                        <div style={{ fontSize: '10px', opacity: 0.5 }}>
+                          E: {selectedUserProgress.hindi.easyCompleted}/1 | I: {selectedUserProgress.hindi.intermediateCompleted}/1 | H: {selectedUserProgress.hindi.hardCompleted}/3
+                        </div>
+                      </div>
+
+                      {/* Spanish Milestones */}
+                      <div style={{ paddingLeft: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold' }}>Spanish 🇪🇸</span>
+                          <span style={{ fontSize: '11px', color: '#a855f7', fontWeight: 'bold', textTransform: 'capitalize' }}>
+                            {selectedUserProgress.spanish.currentStage}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '18px', opacity: selectedUserProgress.spanish.badges.includes('easy_explorer') ? 1 : 0.2 }} title="Easy Explorer">🎖️</span>
+                          <span style={{ fontSize: '18px', opacity: selectedUserProgress.spanish.badges.includes('intermediate_scholar') ? 1 : 0.2 }} title="Intermediate Scholar">🏆</span>
+                          <span style={{ fontSize: '18px', opacity: selectedUserProgress.spanish.badges.includes('language_star') ? 1 : 0.2 }} title="Language Star">⭐</span>
+                        </div>
+                        <div style={{ fontSize: '10px', opacity: 0.5 }}>
+                          E: {selectedUserProgress.spanish.easyCompleted}/1 | I: {selectedUserProgress.spanish.intermediateCompleted}/1 | H: {selectedUserProgress.spanish.hardCompleted}/3
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>Quiz & Lesson History</h4>
 

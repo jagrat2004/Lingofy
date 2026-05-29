@@ -19,7 +19,7 @@ export interface IUserAnswer {
 export interface ILessonAttempt extends Document {
   userId: mongoose.Types.ObjectId;
   language: 'hindi' | 'spanish';
-  level: 'beginner' | 'intermediate' | 'dynamic';
+  level: 'easy' | 'intermediate' | 'hard' | 'beginner' | 'dynamic';
   questions: IQuestion[];
   userAnswers: IUserAnswer[];
   score: number;
@@ -50,7 +50,7 @@ const UserAnswerSchema: Schema = new Schema({
 const LessonAttemptSchema: Schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   language: { type: String, enum: ['hindi', 'spanish'], required: true },
-  level: { type: String, enum: ['beginner', 'intermediate', 'dynamic'], required: true },
+  level: { type: String, enum: ['easy', 'beginner', 'intermediate', 'hard', 'dynamic'], required: true },
   questions: { type: [QuestionSchema], required: true },
   userAnswers: { type: [UserAnswerSchema], required: true },
   score: { type: Number, required: true, min: 0 },
